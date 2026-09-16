@@ -1,0 +1,27 @@
+.application-area .membership-form{display:flex;flex-direction:column;gap:18px;width:100%;max-width:440px;justify-self:end}
+.membership-form .application-fields{display:flex;flex-direction:column;gap:18px}
+.application-area .membership-form label{display:flex;flex-direction:column;align-items:stretch;gap:8px;font-size:13px;font-weight:500;line-height:1.4;margin:0}
+.membership-input{display:inline-flex;width:100%;border:1px solid #92978366;border-radius:8px;background:#f6f6eea8;box-shadow:0 1px 2px #30342608;transition:border-color .18s,box-shadow .18s}
+.application-area .membership-form input,.application-area .membership-form textarea{margin:0;min-height:44px;padding:11px 13px;border:0;border-radius:inherit;background:transparent;font-size:16px;line-height:1.4;color:#303426;outline:none}
+.membership-input:focus-within{border-color:#737e61;box-shadow:0 0 0 3px #737e6126}
+.membership-input:has([aria-invalid="true"]){border-color:#ae5655;box-shadow:0 0 0 3px #ae565512}
+.membership-input input::placeholder,.membership-form textarea::placeholder{color:#838777;font-weight:400}
+.application-area .membership-form textarea{border:1px solid #92978366;border-radius:8px;background:#f6f6eea8;min-height:112px;resize:vertical}
+.application-area .membership-form textarea:focus{border-color:#737e61;box-shadow:0 0 0 3px #737e6126}
+.application-area .membership-form textarea[aria-invalid="true"]{border-color:#ae5655}
+.membership-form .field-error{margin:0;font-size:12px;font-weight:400}
+.membership-submit{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:46px;padding:11px 18px;border:1px solid #303426;border-radius:8px;background:#303426;color:#f6f6ee;font:inherit;font-size:14px;font-weight:500;cursor:pointer;box-shadow:inset 0 1px #ffffff20;transition:background .18s}
+.membership-submit:hover:not(:disabled){background:#444c38}.membership-submit:focus-visible{outline:2px solid #737e61;outline-offset:3px}.membership-submit:disabled{opacity:.55;cursor:not-allowed}
+.membership-spinner{position:absolute;width:18px;height:18px;border:2px solid #ffffff50;border-top-color:currentColor;border-radius:50%;animation:membership-spin .7s linear infinite}
+.membership-form .form-note,.membership-form .form-unavailable{margin:0}.membership-form .application-feedback:empty{display:none}
+@keyframes membership-spin{to{transform:rotate(360deg)}}
+.application-area.application-simple{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:42px;min-height:100svh;padding:140px 24px;max-width:none;font-family:'Instrument Sans Variable',sans-serif}
+.application-simple .application-intro{margin:0;text-align:center}
+.application-simple .application-intro h2{font-family:'Archivo Variable',sans-serif;font-size:clamp(44px,5.2vw,80px);font-weight:550;line-height:1.05;letter-spacing:-.05em;margin:0}
+.application-simple .application-intro h2 em{font-family:'Instrument Serif',serif;font-weight:400;letter-spacing:-.03em}
+.experience .story-footer,.experience .story-progress{display:none}
+.brand-corner,.story-masthead>span:first-child{color:#fff}
+.application-area.application-simple .membership-form{max-width:256px;padding:0;gap:16px}
+.application-simple .application-feedback.success{font-size:18px;border:0;padding:0;text-align:center}
+@media(max-width:767px){.application-area .membership-form{max-width:none}}
+@media(prefers-reduced-motion:reduce){.membership-spinner{animation:none}}

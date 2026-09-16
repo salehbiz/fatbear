@@ -1,0 +1,79 @@
+/* The app pages share one glass surface, camera and persistent featured image. */
+.instagram-window{position:absolute;inset:0;overflow:clip;border-radius:30px;isolation:isolate}
+.glass-surface{transform-origin:50% 0}
+.instagram-profile-page{position:absolute;inset:0;will-change:transform}
+.inbox-page{position:absolute;inset:0;transform:translate3d(440px,0,0);visibility:hidden;will-change:transform;color:#faf9f3}
+.inbox-header{height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+.inbox-header strong{display:flex;align-items:center;gap:6px;font-size:20px;letter-spacing:-.035em}
+.inbox-search{height:40px;margin:0 20px;display:flex;align-items:center;gap:9px;padding:0 14px;border-radius:12px;background:#ffffff12;color:#f3f2e9b8;font-size:17px;border:1px solid #ffffff0d}
+.inbox-notes{height:154px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 20px 16px;gap:12px}
+.inbox-note{position:relative;display:flex;flex-direction:column;align-items:center;gap:9px;font-size:12px;width:80px;flex:none}
+.note-bubble{position:absolute;bottom:calc(100% - 6px);font-size:11px;background:#a1a395eb;border:1px solid #ffffff40;color:#fff;border-radius:12px;padding:8px 10px;white-space:nowrap;box-shadow:0 5px 12px #28312022;z-index:1}
+.note-bubble::after{content:'';position:absolute;width:7px;height:7px;bottom:-3px;left:20px;background:#a1a395;transform:rotate(45deg)}
+.fan-avatar,.note-avatar{width:66px;height:66px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;border:1px solid #ffffff55;background:linear-gradient(140deg,#ffffff26,transparent 75%),var(--avatar-color,#90927f);box-shadow:inset 0 0 0 3px #ffffff0b;color:#fff;font-size:20px;font-weight:450;letter-spacing:-.04em}
+.note-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}.note-avatar i{position:absolute;bottom:0;right:-2px;width:20px;height:20px;border-radius:50%;border:2px solid #7c8072;background:#a7b494;display:grid;place-items:center}
+.inbox-tabs{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #ffffff26;font-size:16px;color:#f9f9f1aa}
+.inbox-tabs>span{height:100%;display:flex;align-items:center;gap:7px;position:relative}
+.inbox-tabs .is-active{color:#fff;font-weight:550}.inbox-tabs .is-active::after{content:'';height:2px;background:#fff;position:absolute;bottom:0;left:0;right:0;border-radius:2px}.inbox-tabs b{font-size:10px;font-weight:500;background:#ffffff17;border-radius:7px;padding:3px 6px}
+.inbox-messages{height:534px;overflow:clip;position:relative;mask-image:linear-gradient(#000 0%,#000 92%,transparent)}
+.conversation-list{padding:8px 15px 25px;will-change:transform}
+.conversation{height:91px;display:flex;align-items:center;gap:13px;position:relative;padding:0 4px;will-change:transform,opacity}
+.conversation-key{height:104px}.conversation .fan-avatar{width:58px;height:58px;font-size:18px}
+.conversation-text{flex:1;min-width:0}.conversation-text>div{display:flex;align-items:center;gap:8px;font-size:15px;line-height:1.3}.conversation-text strong{font-weight:570}.conversation-text>div>span{font-size:10px;color:#ffffff87}.conversation p{margin:7px 0 0;font-size:16px;line-height:1.3;letter-spacing:-.025em;max-width:244px}.conversation-key p{font-size:24px;font-weight:560;letter-spacing:-.05em;white-space:nowrap}.unread-dot{width:6px;height:6px;background:#b7d8fa;border-radius:50%;flex:none}.conversation-camera{opacity:.72;flex:none;margin-left:3px}
+.profile-bio .profile-link{position:relative;height:24px;min-height:24px;width:210px;display:block}
+.bio-link-target{position:absolute;top:calc((24px - var(--bio-hit-size,64px))/2);left:-3px;min-height:var(--bio-hit-size,64px);width:216px;display:flex;align-items:center;text-decoration:none;color:inherit;pointer-events:auto}
+.bio-link-target[inert]{pointer-events:none}.bio-link-label{position:relative;display:inline-flex;align-items:center;gap:6px;padding:5px 4px;white-space:nowrap;border-radius:7px;background:rgb(255 255 255 / calc(var(--link-emphasis,0)*.12));box-shadow:0 0 0 1px rgb(255 255 255 / calc(var(--link-emphasis,0)*.4));transform-origin:50% 50%;font-size:15px;font-weight:540}
+.bio-link-target:focus-visible{outline:0}.bio-link-target:focus-visible .bio-link-label{outline:2px solid #fff;outline-offset:4px}
+.story-cursor,.link-ripple{position:absolute;left:0;top:0;z-index:6;pointer-events:none;visibility:hidden;transform-origin:0 0;will-change:transform,opacity}
+.story-cursor{color:#f9f8ef;filter:drop-shadow(0 2px 2px #22281e88)}.desktop-cursor{stroke:#505946;stroke-width:6px}.mobile-touch{display:none;stroke:#68725e;stroke-width:5px;transform:translate(-12px,-4px) rotate(-15deg)}
+.link-ripple{width:38px;height:38px;border:1px solid #ffffffe6;border-radius:50%;transform-origin:50% 50%}
+
+/* A portrait link-in-bio destination; the panel stays separate from the paper field. */
+.passes-reveal{position:absolute;inset:0;z-index:5;visibility:hidden;pointer-events:none;isolation:isolate;background:transparent}
+.passes-browser-bar{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;height:36px;min-height:36px;margin:0 -20px;padding:0 20px;background:#ffffff12;border-bottom:1px solid #ffffff24;font-size:11px;color:#f8f8ed}
+.passes-browser-bar>span:last-of-type{position:absolute;right:18px;font-size:18px}
+.passes-loading{position:absolute;bottom:0;left:0;right:0;height:2px;background:#e0ebcf;transform-origin:left;will-change:transform,opacity}
+.static-experience .passes-loading{display:none}
+.passes-page{position:absolute;left:0;top:0;width:380px;height:700px;container-type:size;container-name:passes;display:flex;flex-direction:column;border-radius:28px;border:1px solid #ffffff64;background:linear-gradient(135deg,rgba(66,73,58,.78),rgba(55,66,46,.76));box-shadow:0 30px 65px -30px #35432e70,inset 0 1px 0 #ffffff40;padding:0 20px 12px;color:#fff;pointer-events:auto;overflow:clip;transform-origin:50% 50%;will-change:transform;backface-visibility:hidden}
+.passes-header{height:54px;flex:none;display:flex;align-items:center;border-bottom:1px solid #ffffff24;gap:10px}
+.passes-wordmark{font-family:'Archivo Variable',sans-serif;font-size:27px;font-weight:650;letter-spacing:-1.5px;display:flex;align-items:center;gap:6px}
+.passes-header>span:nth-child(2){font-size:8px;letter-spacing:.09em;margin-left:auto;color:#faf9eddb}.passes-header>img{height:27px;width:27px;border-radius:50%;object-fit:cover}
+.passes-hero{display:flex;flex-direction:column;flex:1;min-height:0;gap:16px;padding:16px 0 13px}
+.passes-cover{order:-1;flex:1;min-height:85px;max-height:280px;margin:0;position:relative;overflow:hidden;border-radius:13px}
+.passes-cover>img{width:100%;height:100%;object-fit:cover;object-position:50% 40%;display:block;transform:scale(var(--cover-scale,1))}
+.passes-cover::after{content:'';position:absolute;inset:65% 0 0;background:linear-gradient(transparent,#1524218f)}
+.passes-cover figcaption{position:absolute;z-index:1;bottom:12px;left:12px;right:12px;font-size:10px}.passes-cover figcaption>span:last-child{display:none}
+.passes-introduction{flex:none}.passes-handle{display:flex;align-items:center;gap:5px;font-size:12px;color:#f1f0e2e6;margin:0 0 5px}.passes-handle .verified-badge{width:14px;height:14px}
+.passes-introduction h2{font-family:'Archivo Variable',sans-serif;font-size:37px;font-weight:550;letter-spacing:-.055em;line-height:1;margin:0 0 9px}
+.passes-tagline{font-family:'Instrument Serif',serif;font-size:27px;font-weight:400;letter-spacing:-.055em;line-height:1.08;margin:0}.passes-tagline em{font-weight:400}
+.passes-description{font-size:12px;line-height:1.4;color:#f4f3e7ed;margin:10px 0 12px}
+.passes-explore{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #ffffff75;color:#fff;background:#ffffff0e;padding:0 13px;min-height:44px;width:100%;border-radius:8px;font-size:13px;cursor:pointer}.passes-explore:hover{background:#ffffff1c}
+.passes-feed{flex:none}.passes-tabs{display:flex;justify-content:space-between;gap:8px;height:44px;border-top:1px solid #ffffff24}.passes-tabs button{min-width:44px;min-height:44px;position:relative;border:0;color:#f1f2e5db;background:none;padding:0;font-size:11px;cursor:pointer;white-space:nowrap}.passes-tabs button[aria-pressed=true]{color:#fff}.passes-tabs button[aria-pressed=true]::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:#fff}
+.passes-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;height:110px;padding-top:8px}.passes-tiles article{position:relative;min-width:0;overflow:hidden;border-radius:8px;background:#ffffff10}.passes-tiles img{width:100%;height:100%;object-fit:cover;object-position:50% 30%;display:block}.passes-tiles article::after{content:'';position:absolute;inset:55% 0 0;background:linear-gradient(transparent,#1b261f9c)}.passes-tiles article>div{position:absolute;bottom:8px;right:8px;z-index:1;display:flex}.passes-tiles article>div span{display:none}
+.passes-demo{flex:none;font-size:9px;color:#f0f1e5dc;margin:11px 0 0;line-height:1.2}.passes-page button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.fan-avatar img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
+@container passes (max-height:650px){
+ .passes-header{height:46px}.passes-hero{gap:12px;padding-top:12px}.passes-tagline{font-size:24px}.passes-introduction h2{font-size:32px;margin-bottom:6px}.passes-description{margin:8px 0}.passes-tiles{height:83px}
+}
+@container passes (max-width:310px){
+ .passes-wordmark{font-size:24px}.passes-header>span:nth-child(2){font-size:7px}.passes-tabs button{font-size:9px}.passes-tagline{font-size:23px}.passes-description{font-size:11px}.passes-demo{font-size:8px}
+}
+@container passes (max-height:480px){
+ .passes-header{height:40px}.passes-hero{gap:8px;padding:10px 0 8px}.passes-cover{min-height:64px}.passes-cover figcaption{display:none}.passes-handle{font-size:10px}.passes-introduction h2{font-size:28px;margin-bottom:5px}.passes-tagline{font-size:20px}.passes-description{display:none}.passes-explore{margin-top:8px;font-size:11px}.passes-tiles{height:56px;padding-top:5px}.passes-demo{margin-top:8px}.passes-header>span:nth-child(2){display:none}.passes-header>img{margin-left:auto}
+}
+@media(max-width:767px){.desktop-cursor{display:none}.mobile-touch{display:block}}
+@media(max-width:767px) and (max-height:680px){
+ .inbox-page{height:620px;bottom:auto}.inbox-header{height:64px}.inbox-notes{height:110px;padding-bottom:10px}.note-bubble{font-size:10px;padding:5px 8px}.inbox-tabs{height:52px}.inbox-messages{height:354px}.conversation p{font-size:20px}.conversation-key p{font-size:27px}.conversation-text>div{font-size:17px}.conversation-camera{width:20px}.conversation{gap:11px}
+}
+/* The same content stays in normal reading order without any camera or simulated tap. */
+.static-experience .instagram-window,.static-experience .instagram-profile-page{position:relative;inset:auto;overflow:visible;height:auto;transform:none;will-change:auto}
+.static-experience .inbox-page{position:relative;inset:auto;height:auto;transform:none;visibility:visible;background:#65705dbd;border:1px solid #ffffff55;border-radius:25px;width:min(440px,100%);margin:65px auto;overflow:clip;will-change:auto}
+.static-experience .inbox-messages{height:auto;mask-image:none}.static-experience .conversation-list,.static-experience .conversation{will-change:auto}.static-experience .story-cursor,.static-experience .link-ripple{display:none}
+.static-experience .bio-link-target{min-height:44px;top:-10px}.static-experience .bio-link-label{font-size:14px}
+.static-experience .passes-reveal{position:relative;inset:auto;visibility:visible;overflow:visible;background:none;pointer-events:auto}
+.static-experience .passes-page{position:relative;inset:auto;width:min(420px,100%);height:auto;container-type:inline-size;margin:60px auto 0;padding:0 20px 18px;overflow:hidden;will-change:auto}
+.static-experience .passes-hero{min-height:0;height:auto;flex:none}.static-experience .passes-cover{height:250px;flex:none;width:100%}.static-experience .passes-tiles{height:110px}
+.static-experience .conversation-key .conversation-text p{font-size:20px}
+@media(max-width:500px){
+ .static-experience .inbox-header{padding:0 12px}.static-experience .inbox-header strong{font-size:17px}.static-experience .inbox-header>svg{width:21px}.static-experience .inbox-notes{padding-left:10px;padding-right:10px;gap:4px}.static-experience .inbox-note{width:65px;font-size:10px}.static-experience .fan-avatar,.static-experience .note-avatar{width:54px;height:54px}.static-experience .note-bubble{font-size:8px;padding:6px 7px}.static-experience .inbox-tabs{padding:0 13px;font-size:13px}.static-experience .conversation{gap:9px;height:88px}.static-experience .conversation .fan-avatar{width:43px;height:43px;font-size:14px}.static-experience .conversation-key p{font-size:20px}.static-experience .conversation p{font-size:13px}.static-experience .conversation-text>div{font-size:13px}.static-experience .conversation-camera{width:19px}.static-experience .conversation-list{padding-left:9px;padding-right:9px}.static-experience .passes-page{padding-left:13px;padding-right:13px}.static-experience .passes-cover{height:220px}
+}

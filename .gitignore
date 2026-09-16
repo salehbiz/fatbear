@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.sites-runtime/
+.vercel/
+.env.local
+.env.*.local
+work/
+.claude/

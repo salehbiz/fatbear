@@ -1,0 +1,16 @@
+.scroll-reveal {
+  transform-origin: 0% 50%;
+}
+
+.scroll-reveal-text {
+  display: block;
+}
+
+.scroll-reveal-word {
+  display: inline-block;
+  will-change: opacity, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal-word { opacity: 1 !important; filter: none !important; }
+}
