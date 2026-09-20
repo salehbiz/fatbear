@@ -106,7 +106,7 @@ export function createBusinessMotion(root:HTMLElement){
    alpha(film,s.filmOpacity*(1-smooth(range(p,.62,.64))));film.style.borderRadius=`${mix(mix(13,0,s.expand),9,s.retreat)}px`;
    // The same canvas expands into the film and lands inside the dashboard preview.
    photo.render(filmBoxAt(s,start,end,w,h));
-   const posterSource=media(`business/${p>=.51?'end':'crew-poster'}.jpg`);if(poster.getAttribute('src')!==posterSource)poster.src=posterSource;
+   const posterSource=media(`business/${p>=.51?'end':'crew-poster'}.webp`);if(poster.getAttribute('src')!==posterSource)poster.src=posterSource;
    if(p>=.63){cache.release();canvas.style.opacity='0';drawn=-1;}
    else {cache.request(s.frame);draw();}
    alpha(dashboard,s.dashboardOpacity);

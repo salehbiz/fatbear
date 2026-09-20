@@ -9,3 +9,4 @@ dist/
 work/
 .claude/
 .vercel
+report*.json

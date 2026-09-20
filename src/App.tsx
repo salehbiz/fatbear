@@ -39,7 +39,7 @@ export default function App() {
       <div className="wordmark-row" aria-hidden="true"><span className="word-fat">Fat</span><span className="media-slot"/><span className="word-bear">Bear</span></div>
       <h1 className="sr-only">Fat Bear. A membership club for creators.</h1>
       <div className="film-surface">
-        <img className="poster" src={media('poster.webp')} width="1280" height="720" fetchPriority="high" alt="A creator standing beside a sunlit pool"/>
+        <img className="poster" srcSet={`${media('poster-phone.webp')} 960w, ${media('poster-mobile.webp')} 1920w, ${media('poster.webp')} 3840w`} sizes="100vw" src={media('poster-mobile.webp')} width="1280" height="720" fetchPriority="high" alt="A creator standing beside a sunlit pool"/>
         <canvas className="film-canvas" aria-hidden="true"/>
       </div>
       <div className="hero-footer"><span className="footer-title">{INTRO_COPY}</span><span className="scroll-cue">Scroll to explore <ArrowDown size={16}/></span><span className="footer-end">It starts with you. <ArrowUpRight size={16}/></span></div>

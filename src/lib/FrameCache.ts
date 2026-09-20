@@ -46,8 +46,11 @@ export class FrameCache {
   private active = true;
   private previewOrder: number[] = [];
   private previewIndex = 0;
-  // Once any full-res frame has been displayed, never fall back to blurry previews.
   private hasShownFullRes = false;
+
+  // Background preloader is unblocked either when target > 0 (user scrolled)
+  // or after idle callback / timeout in the browser, leaving initial LCP unconstrained.
+  private backgroundEnabled = false;
 
   constructor(
     private last: number,
@@ -66,6 +69,23 @@ export class FrameCache {
       }
       this.previewOrder = order;
     }
+
+    if (typeof window === 'undefined') {
+      this.backgroundEnabled = true;
+    } else {
+      const enable = () => {
+        this.enableBackground();
+        window.removeEventListener('scroll', enable);
+      };
+      window.addEventListener('scroll', enable, { passive: true });
+      setTimeout(enable, 2500);
+    }
+  }
+
+  private enableBackground() {
+    if (this.destroyed || this.backgroundEnabled) return;
+    this.backgroundEnabled = true;
+    this.pump();
   }
 
   request(target: number) {
@@ -73,12 +93,19 @@ export class FrameCache {
     if (target !== this.target) this.direction = target > this.target ? 1 : -1;
     this.target = target;
     this.active = true;
+
+    if (target > 0 && !this.backgroundEnabled) {
+      this.backgroundEnabled = true;
+    }
+
+    // Playhead-priority neighborhood window radiating outward from target:
+    // local comes FIRST so adjacent frames load immediately, coarse frames at the end.
     const local = frameWindow(target, this.last, this.limit - 4, this.direction);
     const coarse = [0, Math.round(this.last / 3), Math.round(this.last * 2 / 3), this.last];
-    this.wanted = [...new Set([target, ...coarse, ...local])];
+    this.wanted = [...new Set([...local, ...coarse])];
     this.wantedSet = new Set(this.wanted);
 
-    // Only abort fetches that are very far from the current target.
+    // Abort fetches that are far from current playhead
     for (const [n, controller] of this.pending) {
       if (!this.wantedSet.has(n) && Math.abs(n - target) > this.limit) {
         controller.abort();
@@ -89,14 +116,14 @@ export class FrameCache {
   }
 
   private evict() {
-    // Evict decoded bitmaps outside the wanted window to free VRAM.
+    // Evict decoded bitmaps outside wanted window to free GPU VRAM
     for (const [n, frame] of this.frames) {
       if (!this.wantedSet.has(n)) {
         dispose(frame);
         this.frames.delete(n);
       }
     }
-    // Keep compressed blobs longer — they're just RAM, not VRAM.
+    // Retain compressed blobs in memory for instant re-decode on reverse scrub
     const blobLimit = this.limit * 4;
     if (this.compressedBlobs.size > blobLimit) {
       const entries = [...this.compressedBlobs.keys()].sort((a, b) => Math.abs(b - this.target) - Math.abs(a - this.target));
@@ -104,16 +131,19 @@ export class FrameCache {
         this.compressedBlobs.delete(entries.pop()!);
       }
     }
-    // Preview frames are tiny — keep them all, never evict.
   }
 
   private pump() {
     if (this.destroyed || !this.active) return;
 
-    // 6 concurrent full-res fetches.
+    // Concurrency limit: 6 concurrent full-res fetches
     while (this.pending.size < 6) {
       let n: number | undefined;
-      for (const w of this.wanted) {
+
+      // On initial page load before idle, only fetch target frame so LCP is unthrottled
+      const candidates = this.backgroundEnabled ? this.wanted : [this.target];
+
+      for (const w of candidates) {
         if (!this.frames.has(w) && !this.pending.has(w) && !this.failed.has(w) && !this.decoding.has(w)) {
           if (this.compressedBlobs.has(w)) {
             void this.decodeBlob(w, this.compressedBlobs.get(w)!);
@@ -129,9 +159,9 @@ export class FrameCache {
       void this.loadReal(n, controller);
     }
 
-    // 3 concurrent preview fetches.
-    if (this.previewPath && this.previewPending.size < 3) {
-      while (this.previewPending.size < 3 && this.previewIndex < this.previewOrder.length) {
+    // Up to 2 concurrent preview fetches when background preloading is active
+    if (this.previewPath && this.previewPending.size < 2 && this.backgroundEnabled) {
+      while (this.previewPending.size < 2 && this.previewIndex < this.previewOrder.length) {
         const p = this.previewOrder[this.previewIndex++];
         if (!this.previewFrames.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p) && !this.frames.has(p)) {
           const controller = new AbortController();
@@ -160,7 +190,7 @@ export class FrameCache {
           URL.revokeObjectURL(url);
         }
       }
-      if (this.destroyed || !this.wantedSet.has(n)) {
+      if (this.destroyed || !this.active || !this.wantedSet.has(n)) {
         dispose(frame);
         return;
       }
@@ -168,7 +198,7 @@ export class FrameCache {
       this.hasShownFullRes = true;
       this.update();
     } catch {
-      // Decode failed
+      // Decode error
     } finally {
       this.decoding.delete(n);
     }
@@ -193,7 +223,7 @@ export class FrameCache {
           URL.revokeObjectURL(url);
         }
       }
-      if (this.destroyed || controller.signal.aborted || !this.wantedSet.has(n)) {
+      if (this.destroyed || !this.active || controller.signal.aborted || !this.wantedSet.has(n)) {
         dispose(frame);
         return;
       }
@@ -228,12 +258,11 @@ export class FrameCache {
           URL.revokeObjectURL(url);
         }
       }
-      if (this.destroyed || controller.signal.aborted) {
+      if (this.destroyed || !this.active || controller.signal.aborted) {
         dispose(frame);
         return;
       }
       this.previewFrames.set(n, frame);
-      // Only trigger a draw from preview if we haven't shown full-res yet (initial load).
       if (!this.hasShownFullRes && !this.frames.has(this.target) && Math.abs(n - this.target) <= 8) {
         this.update();
       }
@@ -246,12 +275,12 @@ export class FrameCache {
   }
 
   nearest(): { index: number; image: Frame } | undefined {
-    // Exact match — best case.
+    // Exact match
     if (this.frames.has(this.target)) {
       return { index: this.target, image: this.frames.get(this.target)! };
     }
 
-    // Find closest full-res frame.
+    // Find closest full-res frame
     let best = Infinity, result: { index: number; image: Frame } | undefined;
     for (const [n, image] of this.frames) {
       if (n === this.last && this.target < this.last) continue;
@@ -262,9 +291,9 @@ export class FrameCache {
       }
     }
 
-    // Hybrid fallback: hold full-res for small gaps (no blur flicker),
-    // but use preview frames for large gaps to avoid visible skipping.
-    // Threshold of 8 means slow scrolling stays sharp, fast scrolling stays smooth.
+    // Hybrid preview fallback per skill and user specification:
+    // If the gap is <= 8 frames, hold the full-res frame (sharp, no blurry flicker!).
+    // Only if gap > 8 frames during fast scrubs, use preview frame to avoid visual stutter/blank frames.
     if (best > 8 && this.previewFrames.size > 0) {
       for (const [n, image] of this.previewFrames) {
         if (n === this.last && this.target < this.last) continue;
