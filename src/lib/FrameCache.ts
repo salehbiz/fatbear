@@ -4,7 +4,7 @@ import { media } from './media';
 type Frame = ImageBitmap | HTMLImageElement;
 function dispose(frame: Frame) { if ('close' in frame) frame.close(); }
 
-const CACHE_NAME = 'fatbear-frame-cache-v1';
+const CACHE_NAME = 'fatbear-frame-cache-v2';
 
 async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise<Blob> {
   if (typeof caches !== 'undefined') {
@@ -31,15 +31,15 @@ export class FrameCache {
   private frames = new Map<number, Frame>();
   private previewFrames = new Map<number, Frame>();
   private compressedBlobs = new Map<number, Blob>();
-  private previewBlobs = new Map<number, Blob>();
-  
+
   private pending = new Map<number, AbortController>();
   private previewPending = new Map<number, AbortController>();
   private decoding = new Set<number>();
-  
+
   private failed = new Set<number>();
   private previewFailed = new Set<number>();
   private wanted: number[] = [];
+  private wantedSet = new Set<number>();
   private destroyed = false;
   private target = 0;
   private direction = 1;
@@ -55,10 +55,11 @@ export class FrameCache {
     private previewPath?: (index: number) => string
   ) {
     if (this.previewPath) {
+      const seen = new Set<number>();
       const order: number[] = [];
       for (const stride of [8, 4, 2, 1]) {
         for (let i = 0; i <= this.last; i += stride) {
-          if (!order.includes(i)) order.push(i);
+          if (!seen.has(i)) { seen.add(i); order.push(i); }
         }
       }
       this.previewOrder = order;
@@ -73,25 +74,40 @@ export class FrameCache {
     const local = frameWindow(target, this.last, this.limit - 4, this.direction);
     const coarse = [0, Math.round(this.last / 3), Math.round(this.last * 2 / 3), this.last];
     this.wanted = [...new Set([target, ...coarse, ...local])];
-    
+    this.wantedSet = new Set(this.wanted);
+
+    // Don't abort in-flight fetches – let blobs complete so they land in compressedBlobs.
+    // Only abort fetches for frames far from the current window.
     for (const [n, controller] of this.pending) {
-      if (!this.wanted.includes(n)) controller.abort();
+      if (!this.wantedSet.has(n) && Math.abs(n - target) > this.limit) {
+        controller.abort();
+      }
     }
     this.evict();
     this.pump();
   }
 
   private evict() {
+    // Evict decoded bitmaps outside the wanted window to free VRAM.
     for (const [n, frame] of this.frames) {
-      if (!this.wanted.includes(n)) {
+      if (!this.wantedSet.has(n)) {
         dispose(frame);
         this.frames.delete(n);
       }
     }
-    const maxPreview = Math.max(12, Math.floor(this.limit / 2));
+    // Keep compressed blobs in RAM longer (they're lightweight), only evict distant ones.
+    const blobLimit = this.limit * 3;
+    if (this.compressedBlobs.size > blobLimit) {
+      const entries = [...this.compressedBlobs.keys()].sort((a, b) => Math.abs(b - this.target) - Math.abs(a - this.target));
+      while (this.compressedBlobs.size > blobLimit && entries.length) {
+        this.compressedBlobs.delete(entries.pop()!);
+      }
+    }
+    // Preview frames – keep a generous pool since they're tiny.
+    const maxPreview = Math.max(20, this.last);
     if (this.previewFrames.size > maxPreview) {
       for (const [n, frame] of this.previewFrames) {
-        if (!this.wanted.includes(n)) {
+        if (!this.wantedSet.has(n)) {
           dispose(frame);
           this.previewFrames.delete(n);
           if (this.previewFrames.size <= maxPreview) break;
@@ -102,17 +118,31 @@ export class FrameCache {
 
   private pump() {
     if (this.destroyed || !this.active) return;
-    
-    while (this.pending.size < 4) {
-      const n = this.wanted.find(n => !this.frames.has(n) && !this.pending.has(n) && !this.failed.has(n));
+
+    // Increase concurrency to 6 for full-res frames.
+    while (this.pending.size < 6) {
+      let n: number | undefined;
+      // Priority: re-decode from existing compressed blobs first (instant, no network).
+      for (const w of this.wanted) {
+        if (!this.frames.has(w) && !this.pending.has(w) && !this.failed.has(w) && !this.decoding.has(w)) {
+          if (this.compressedBlobs.has(w)) {
+            // We already have the blob – decode it directly without a network fetch.
+            void this.decodeBlob(w, this.compressedBlobs.get(w)!);
+            continue;
+          }
+          n = w;
+          break;
+        }
+      }
       if (n === undefined) break;
       const controller = new AbortController();
       this.pending.set(n, controller);
       void this.loadReal(n, controller);
     }
 
-    if (this.previewPath && this.previewPending.size < 2) {
-      while (this.previewPending.size < 2 && this.previewIndex < this.previewOrder.length) {
+    // Run preview loads at 3 concurrent.
+    if (this.previewPath && this.previewPending.size < 3) {
+      while (this.previewPending.size < 3 && this.previewIndex < this.previewOrder.length) {
         const p = this.previewOrder[this.previewIndex++];
         if (!this.previewFrames.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p) && !this.frames.has(p)) {
           const controller = new AbortController();
@@ -141,7 +171,7 @@ export class FrameCache {
           URL.revokeObjectURL(url);
         }
       }
-      if (this.destroyed || !this.wanted.includes(n)) {
+      if (this.destroyed || !this.wantedSet.has(n)) {
         dispose(frame);
         return;
       }
@@ -158,8 +188,9 @@ export class FrameCache {
     let frame: Frame | undefined;
     try {
       const blob = await fetchWithCacheStorage(media(this.framePath(n)), controller.signal);
+      // Store compressed blob for re-decode on scroll-back without re-fetching.
       this.compressedBlobs.set(n, blob);
-      
+
       if (typeof createImageBitmap === 'function') {
         frame = await createImageBitmap(blob);
       } else {
@@ -173,7 +204,7 @@ export class FrameCache {
           URL.revokeObjectURL(url);
         }
       }
-      if (this.destroyed || controller.signal.aborted || !this.wanted.includes(n)) {
+      if (this.destroyed || controller.signal.aborted || !this.wantedSet.has(n)) {
         dispose(frame);
         return;
       }
@@ -194,7 +225,6 @@ export class FrameCache {
     let frame: Frame | undefined;
     try {
       const blob = await fetchWithCacheStorage(media(this.previewPath(n)), controller.signal);
-      this.previewBlobs.set(n, blob);
       if (typeof createImageBitmap === 'function') {
         frame = await createImageBitmap(blob);
       } else {
@@ -213,7 +243,7 @@ export class FrameCache {
         return;
       }
       this.previewFrames.set(n, frame);
-      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 6) {
+      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 8) {
         this.update();
       }
     } catch {
@@ -237,7 +267,8 @@ export class FrameCache {
         result = { index: n, image };
       }
     }
-    if (best > 4 && this.previewFrames.size > 0) {
+    // Fall back to preview frames if no close full-res frame is available.
+    if (best > 3 && this.previewFrames.size > 0) {
       for (const [n, image] of this.previewFrames) {
         if (n === this.last && this.target < this.last) continue;
         const d = Math.abs(n - this.target);
@@ -263,8 +294,8 @@ export class FrameCache {
     for (const frame of this.previewFrames.values()) dispose(frame);
     this.previewFrames.clear();
     this.compressedBlobs.clear();
-    this.previewBlobs.clear();
     this.wanted = [];
+    this.wantedSet.clear();
   }
 
   setLimit(limit: number) {
@@ -275,6 +306,7 @@ export class FrameCache {
     return {
       decoded: this.frames.size,
       previewDecoded: this.previewFrames.size,
+      blobs: this.compressedBlobs.size,
       pending: this.pending.size,
       failed: this.failed.size,
       target: this.target,
@@ -290,6 +322,5 @@ export class FrameCache {
     for (const frame of this.previewFrames.values()) dispose(frame);
     this.previewFrames.clear();
     this.compressedBlobs.clear();
-    this.previewBlobs.clear();
   }
 }

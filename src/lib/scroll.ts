@@ -47,18 +47,19 @@ export function createScroll(root: HTMLElement) {
   let previousWorld = -1;
   const lastFrame = manifest.lastFrame; // First fully black frame. Trailing black excluded.
   const tier = getFrameTier();
+  const tierDir = tier === 'mobile' ? 'frames-mobile' : tier === 'desktop-hq' ? 'frames-4k' : 'frames';
   const cache = new FrameCache(
     lastFrame,
-    w < 768 ? 24 : tier === '4k' ? 24 : 40,
+    w < 768 ? 28 : tier === 'desktop-hq' ? 30 : 48,
     () => draw(),
-    n => `${tier === 'mobile' ? 'frames-mobile' : tier === '4k' ? 'frames-4k' : 'frames'}/${String(n + 1).padStart(4, '0')}.webp`,
+    n => `${tierDir}/${String(n + 1).padStart(4, '0')}.webp`,
     n => `frames-preview/${String(n + 1).padStart(4, '0')}.webp`
   );
   let targetProgress = 0;
   const touch = matchMedia('(pointer: coarse)').matches;
   function measure() {
     w = innerWidth; h = innerHeight;
-    cache.setLimit(w < 768 ? 24 : tier === '4k' ? 24 : 40);
+    cache.setLimit(w < 768 ? 28 : tier === 'desktop-hq' ? 30 : 48);
     stage.style.height = `${h}px`;
     const box = slot.getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
     initial = { x: box.left - stageBox.left, y: box.top - stageBox.top, w: box.width, h: box.height };
