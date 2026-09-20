@@ -251,7 +251,7 @@ export class FrameCache {
       return { index: this.target, image: this.frames.get(this.target)! };
     }
 
-    // Find closest full-res frame. Always prefer full-res over preview.
+    // Find closest full-res frame.
     let best = Infinity, result: { index: number; image: Frame } | undefined;
     for (const [n, image] of this.frames) {
       if (n === this.last && this.target < this.last) continue;
@@ -262,10 +262,10 @@ export class FrameCache {
       }
     }
 
-    // Only fall back to preview frames if we have ZERO full-res frames decoded.
-    // This prevents the blur→clear→blur cycle — once full-res is available,
-    // we hold it on screen until the next full-res frame arrives.
-    if (!result && this.previewFrames.size > 0) {
+    // Hybrid fallback: hold full-res for small gaps (no blur flicker),
+    // but use preview frames for large gaps to avoid visible skipping.
+    // Threshold of 8 means slow scrolling stays sharp, fast scrolling stays smooth.
+    if (best > 8 && this.previewFrames.size > 0) {
       for (const [n, image] of this.previewFrames) {
         if (n === this.last && this.target < this.last) continue;
         const d = Math.abs(n - this.target);

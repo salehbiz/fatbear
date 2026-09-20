@@ -50,7 +50,7 @@ export function createScroll(root: HTMLElement) {
   const tierDir = tier === '4k' ? 'frames-4k' : 'frames';
   const cache = new FrameCache(
     lastFrame,
-    tier === '4k' ? 32 : 48,
+    tier === '4k' ? 40 : 48,
     () => draw(),
     n => `${tierDir}/${String(n + 1).padStart(4, '0')}.webp`,
     n => `frames-preview/${String(n + 1).padStart(4, '0')}.webp`
@@ -59,7 +59,7 @@ export function createScroll(root: HTMLElement) {
   const touch = matchMedia('(pointer: coarse)').matches;
   function measure() {
     w = innerWidth; h = innerHeight;
-    cache.setLimit(tier === '4k' ? 32 : 48);
+    cache.setLimit(tier === '4k' ? 40 : 48);
     stage.style.height = `${h}px`;
     const box = slot.getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
     initial = { x: box.left - stageBox.left, y: box.top - stageBox.top, w: box.width, h: box.height };
