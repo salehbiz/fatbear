@@ -49,16 +49,16 @@ export function createScroll(root: HTMLElement) {
   const tier = getFrameTier();
   const cache = new FrameCache(
     lastFrame,
-    w < 768 ? 24 : 40,
+    w < 768 ? 24 : tier === '4k' ? 24 : 40,
     () => draw(),
-    n => `${tier === 'mobile' ? 'frames-mobile' : 'frames'}/${String(n + 1).padStart(4, '0')}.webp`,
+    n => `${tier === 'mobile' ? 'frames-mobile' : tier === '4k' ? 'frames-4k' : 'frames'}/${String(n + 1).padStart(4, '0')}.webp`,
     n => `frames-preview/${String(n + 1).padStart(4, '0')}.webp`
   );
   let targetProgress = 0;
   const touch = matchMedia('(pointer: coarse)').matches;
   function measure() {
     w = innerWidth; h = innerHeight;
-    cache.setLimit(w < 768 ? 24 : 40);
+    cache.setLimit(w < 768 ? 24 : tier === '4k' ? 24 : 40);
     stage.style.height = `${h}px`;
     const box = slot.getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
     initial = { x: box.left - stageBox.left, y: box.top - stageBox.top, w: box.width, h: box.height };

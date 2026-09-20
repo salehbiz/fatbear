@@ -24,9 +24,9 @@ export function createBusinessMotion(root:HTMLElement){
  const tier = getFrameTier();
  const cache=new FrameCache(
   BUSINESS_LAST_FRAME,
-  tier === 'mobile' ? 20 : 32,
+  tier === 'mobile' ? 20 : tier === '4k' ? 20 : 32,
   draw,
-  n=>`business/${tier === 'mobile' ? 'crew-mobile' : 'crew-webp'}/${String(n+1).padStart(4,'0')}.webp`,
+  n=>`business/${tier === 'mobile' ? 'crew-mobile' : tier === '4k' ? 'crew-4k' : 'crew-webp'}/${String(n+1).padStart(4,'0')}.webp`,
   n=>`business/crew-preview/${String(n+1).padStart(4,'0')}.webp`
  );
  function style(el:HTMLElement,key:'transform'|'opacity'|'visibility'|'filter',value:string){if(el.style[key]!==value)el.style[key]=value;}
