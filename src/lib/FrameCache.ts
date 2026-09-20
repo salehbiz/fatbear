@@ -4,7 +4,7 @@ import { media } from './media';
 type Frame = ImageBitmap | HTMLImageElement;
 function dispose(frame: Frame) { if ('close' in frame) frame.close(); }
 
-const CACHE_NAME = 'fatbear-frame-cache-v2';
+const CACHE_NAME = 'fatbear-frame-cache-v3';
 
 async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise<Blob> {
   if (typeof caches !== 'undefined') {
@@ -46,6 +46,8 @@ export class FrameCache {
   private active = true;
   private previewOrder: number[] = [];
   private previewIndex = 0;
+  // Once any full-res frame has been displayed, never fall back to blurry previews.
+  private hasShownFullRes = false;
 
   constructor(
     private last: number,
@@ -76,8 +78,7 @@ export class FrameCache {
     this.wanted = [...new Set([target, ...coarse, ...local])];
     this.wantedSet = new Set(this.wanted);
 
-    // Don't abort in-flight fetches – let blobs complete so they land in compressedBlobs.
-    // Only abort fetches for frames far from the current window.
+    // Only abort fetches that are very far from the current target.
     for (const [n, controller] of this.pending) {
       if (!this.wantedSet.has(n) && Math.abs(n - target) > this.limit) {
         controller.abort();
@@ -95,38 +96,26 @@ export class FrameCache {
         this.frames.delete(n);
       }
     }
-    // Keep compressed blobs in RAM longer (they're lightweight), only evict distant ones.
-    const blobLimit = this.limit * 3;
+    // Keep compressed blobs longer — they're just RAM, not VRAM.
+    const blobLimit = this.limit * 4;
     if (this.compressedBlobs.size > blobLimit) {
       const entries = [...this.compressedBlobs.keys()].sort((a, b) => Math.abs(b - this.target) - Math.abs(a - this.target));
       while (this.compressedBlobs.size > blobLimit && entries.length) {
         this.compressedBlobs.delete(entries.pop()!);
       }
     }
-    // Preview frames – keep a generous pool since they're tiny.
-    const maxPreview = Math.max(20, this.last);
-    if (this.previewFrames.size > maxPreview) {
-      for (const [n, frame] of this.previewFrames) {
-        if (!this.wantedSet.has(n)) {
-          dispose(frame);
-          this.previewFrames.delete(n);
-          if (this.previewFrames.size <= maxPreview) break;
-        }
-      }
-    }
+    // Preview frames are tiny — keep them all, never evict.
   }
 
   private pump() {
     if (this.destroyed || !this.active) return;
 
-    // Increase concurrency to 6 for full-res frames.
+    // 6 concurrent full-res fetches.
     while (this.pending.size < 6) {
       let n: number | undefined;
-      // Priority: re-decode from existing compressed blobs first (instant, no network).
       for (const w of this.wanted) {
         if (!this.frames.has(w) && !this.pending.has(w) && !this.failed.has(w) && !this.decoding.has(w)) {
           if (this.compressedBlobs.has(w)) {
-            // We already have the blob – decode it directly without a network fetch.
             void this.decodeBlob(w, this.compressedBlobs.get(w)!);
             continue;
           }
@@ -140,7 +129,7 @@ export class FrameCache {
       void this.loadReal(n, controller);
     }
 
-    // Run preview loads at 3 concurrent.
+    // 3 concurrent preview fetches.
     if (this.previewPath && this.previewPending.size < 3) {
       while (this.previewPending.size < 3 && this.previewIndex < this.previewOrder.length) {
         const p = this.previewOrder[this.previewIndex++];
@@ -176,6 +165,7 @@ export class FrameCache {
         return;
       }
       this.frames.set(n, frame);
+      this.hasShownFullRes = true;
       this.update();
     } catch {
       // Decode failed
@@ -188,7 +178,6 @@ export class FrameCache {
     let frame: Frame | undefined;
     try {
       const blob = await fetchWithCacheStorage(media(this.framePath(n)), controller.signal);
-      // Store compressed blob for re-decode on scroll-back without re-fetching.
       this.compressedBlobs.set(n, blob);
 
       if (typeof createImageBitmap === 'function') {
@@ -209,6 +198,7 @@ export class FrameCache {
         return;
       }
       this.frames.set(n, frame);
+      this.hasShownFullRes = true;
       this.update();
     } catch (error: any) {
       if (!controller.signal.aborted && !this.destroyed) {
@@ -243,7 +233,8 @@ export class FrameCache {
         return;
       }
       this.previewFrames.set(n, frame);
-      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 8) {
+      // Only trigger a draw from preview if we haven't shown full-res yet (initial load).
+      if (!this.hasShownFullRes && !this.frames.has(this.target) && Math.abs(n - this.target) <= 8) {
         this.update();
       }
     } catch {
@@ -255,9 +246,12 @@ export class FrameCache {
   }
 
   nearest(): { index: number; image: Frame } | undefined {
+    // Exact match — best case.
     if (this.frames.has(this.target)) {
       return { index: this.target, image: this.frames.get(this.target)! };
     }
+
+    // Find closest full-res frame. Always prefer full-res over preview.
     let best = Infinity, result: { index: number; image: Frame } | undefined;
     for (const [n, image] of this.frames) {
       if (n === this.last && this.target < this.last) continue;
@@ -267,8 +261,11 @@ export class FrameCache {
         result = { index: n, image };
       }
     }
-    // Fall back to preview frames if no close full-res frame is available.
-    if (best > 3 && this.previewFrames.size > 0) {
+
+    // Only fall back to preview frames if we have ZERO full-res frames decoded.
+    // This prevents the blur→clear→blur cycle — once full-res is available,
+    // we hold it on screen until the next full-res frame arrives.
+    if (!result && this.previewFrames.size > 0) {
       for (const [n, image] of this.previewFrames) {
         if (n === this.last && this.target < this.last) continue;
         const d = Math.abs(n - this.target);
@@ -296,6 +293,7 @@ export class FrameCache {
     this.compressedBlobs.clear();
     this.wanted = [];
     this.wantedSet.clear();
+    this.hasShownFullRes = false;
   }
 
   setLimit(limit: number) {

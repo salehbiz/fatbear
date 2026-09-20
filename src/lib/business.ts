@@ -22,10 +22,10 @@ export function createBusinessMotion(root:HTMLElement){
  let viewport={w:innerWidth,h:innerHeight};
  let start={x:0,y:0,w:320,h:180},end={...start},box=dashboardBox(innerWidth,innerHeight),current=0,active=false,drawn=-1,disposed=false;
  const tier = getFrameTier();
- const crewDir = tier === 'mobile' ? 'crew-mobile' : tier === 'desktop-hq' ? 'crew-4k' : 'crew-webp';
+ const crewDir = tier === '4k' ? 'crew-4k' : 'crew-webp';
  const cache=new FrameCache(
   BUSINESS_LAST_FRAME,
-  tier === 'mobile' ? 24 : tier === 'desktop-hq' ? 24 : 40,
+  tier === '4k' ? 28 : 40,
   draw,
   n=>`business/${crewDir}/${String(n+1).padStart(4,'0')}.webp`,
   n=>`business/crew-preview/${String(n+1).padStart(4,'0')}.webp`
@@ -76,7 +76,7 @@ export function createBusinessMotion(root:HTMLElement){
    const cover=local(get('.passes-cover'),passes),preview=local(get('.business-preview'),dashboard);
    start={x:pass.x+cover.x,y:pass.y+cover.y,w:cover.w,h:cover.h};
    end={x:box.x+preview.x,y:box.y+preview.y,w:preview.w,h:preview.h};
-   photo.measure({w,h});cache.setLimit(w<768?24:tier==='desktop-hq'?24:40);
+   photo.measure({w,h});cache.setLimit(tier==='4k'?28:40);
   },
   render(p:number,w:number,h:number,visible:boolean,warm=false){
    current=p;active=visible;viewport={w,h};
