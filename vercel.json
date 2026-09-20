@@ -1,16 +1,25 @@
 {
   "headers": [
     {
-      "source": "/",
+      "source": "/media/frames-4k/(.*)",
       "headers": [
         {
-          "key": "Link",
-          "value": "</media/poster.webp>; rel=preload; as=image; type=image/webp; fetchpriority=high"
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
         }
       ]
     },
     {
       "source": "/media/frames/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/media/frames-mobile/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
