@@ -4,11 +4,12 @@ import { createStoryMotion } from './story';
 import { OPENING_TRAVEL, TOTAL_TRAVEL, AUDIENCE_END, PASSES_END, STORY_START, IRIS_START, IRIS_END, INTRO_TRAVEL, demandProgressAt } from './profile-motion.mjs';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
-import manifest from '../../public/media/manifest.json';
+import manifest from './manifest';
 import { FrameCache } from './FrameCache';
 import { FilmRenderer } from './FilmRenderer';
 import { revealAt } from './reveal-motion.mjs';
 import { EXPANSION_END, coverRect, focalAt, frameAt, mix, range, smooth } from './math.mjs';
+import { getFrameTier } from './frameTier';
 gsap.registerPlugin(ScrollTrigger);
 
 export function createScroll(root: HTMLElement) {
@@ -45,11 +46,12 @@ export function createScroll(root: HTMLElement) {
   let resizeProgress = 0;
   let previousWorld = -1;
   const lastFrame = manifest.lastFrame; // First fully black frame. Trailing black excluded.
+  const tier = getFrameTier();
   const cache = new FrameCache(
     lastFrame,
     w < 768 ? 24 : 40,
     () => draw(),
-    n => `frames/${String(n + 1).padStart(4, '0')}.webp`,
+    n => `${tier === 'mobile' ? 'frames-mobile' : 'frames'}/${String(n + 1).padStart(4, '0')}.webp`,
     n => `frames-preview/${String(n + 1).padStart(4, '0')}.webp`
   );
   let targetProgress = 0;

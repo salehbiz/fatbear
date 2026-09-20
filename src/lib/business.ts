@@ -1,6 +1,7 @@
 import { crewAnchor } from './crew-tracking.mjs';
 import { syncBusinessMetrics } from './business-metrics-view.mjs';
 import { FrameCache } from './FrameCache';
+import { getFrameTier } from './frameTier';
 import { media } from './media';
 import { createPhotoMotion } from './photo-motion.mjs';
 import { landingPoseAt } from './demand-motion.mjs';
@@ -20,11 +21,12 @@ export function createBusinessMotion(root:HTMLElement){
  const lines=copies.map(el=>[...el.querySelectorAll<HTMLElement>('h2>span')]),stats=[...root.querySelectorAll<HTMLElement>('.business-stats>div')];
  let viewport={w:innerWidth,h:innerHeight};
  let start={x:0,y:0,w:320,h:180},end={...start},box=dashboardBox(innerWidth,innerHeight),current=0,active=false,drawn=-1,disposed=false;
+ const tier = getFrameTier();
  const cache=new FrameCache(
   BUSINESS_LAST_FRAME,
-  24,
+  tier === 'mobile' ? 20 : 32,
   draw,
-  n=>`business/crew-webp/${String(n+1).padStart(4,'0')}.webp`,
+  n=>`business/${tier === 'mobile' ? 'crew-mobile' : 'crew-webp'}/${String(n+1).padStart(4,'0')}.webp`,
   n=>`business/crew-preview/${String(n+1).padStart(4,'0')}.webp`
  );
  function style(el:HTMLElement,key:'transform'|'opacity'|'visibility'|'filter',value:string){if(el.style[key]!==value)el.style[key]=value;}

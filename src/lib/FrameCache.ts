@@ -30,8 +30,13 @@ async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise
 export class FrameCache {
   private frames = new Map<number, Frame>();
   private previewFrames = new Map<number, Frame>();
+  private compressedBlobs = new Map<number, Blob>();
+  private previewBlobs = new Map<number, Blob>();
+  
   private pending = new Map<number, AbortController>();
   private previewPending = new Map<number, AbortController>();
+  private decoding = new Set<number>();
+  
   private failed = new Set<number>();
   private previewFailed = new Set<number>();
   private wanted: number[] = [];
@@ -68,6 +73,7 @@ export class FrameCache {
     const local = frameWindow(target, this.last, this.limit - 4, this.direction);
     const coarse = [0, Math.round(this.last / 3), Math.round(this.last * 2 / 3), this.last];
     this.wanted = [...new Set([target, ...coarse, ...local])];
+    
     for (const [n, controller] of this.pending) {
       if (!this.wanted.includes(n)) controller.abort();
     }
@@ -96,15 +102,15 @@ export class FrameCache {
 
   private pump() {
     if (this.destroyed || !this.active) return;
-    // Real frame priority loading
-    while (this.pending.size < 3) {
+    
+    while (this.pending.size < 4) {
       const n = this.wanted.find(n => !this.frames.has(n) && !this.pending.has(n) && !this.failed.has(n));
       if (n === undefined) break;
       const controller = new AbortController();
       this.pending.set(n, controller);
       void this.loadReal(n, controller);
     }
-    // Preview tier stride-pyramid loading in background
+
     if (this.previewPath && this.previewPending.size < 2) {
       while (this.previewPending.size < 2 && this.previewIndex < this.previewOrder.length) {
         const p = this.previewOrder[this.previewIndex++];
@@ -117,10 +123,43 @@ export class FrameCache {
     }
   }
 
+  private async decodeBlob(n: number, blob: Blob) {
+    if (this.decoding.has(n) || this.frames.has(n)) return;
+    this.decoding.add(n);
+    try {
+      let frame: Frame;
+      if (typeof createImageBitmap === 'function') {
+        frame = await createImageBitmap(blob);
+      } else {
+        const url = URL.createObjectURL(blob);
+        try {
+          const img = new Image();
+          img.src = url;
+          await img.decode();
+          frame = img;
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+      if (this.destroyed || !this.wanted.includes(n)) {
+        dispose(frame);
+        return;
+      }
+      this.frames.set(n, frame);
+      this.update();
+    } catch {
+      // Decode failed
+    } finally {
+      this.decoding.delete(n);
+    }
+  }
+
   private async loadReal(n: number, controller: AbortController) {
     let frame: Frame | undefined;
     try {
       const blob = await fetchWithCacheStorage(media(this.framePath(n)), controller.signal);
+      this.compressedBlobs.set(n, blob);
+      
       if (typeof createImageBitmap === 'function') {
         frame = await createImageBitmap(blob);
       } else {
@@ -143,7 +182,6 @@ export class FrameCache {
     } catch (error: any) {
       if (!controller.signal.aborted && !this.destroyed) {
         this.failed.add(n);
-        console.warn('Unable to load animation frame; keeping nearest frame.', error);
       }
     } finally {
       this.pending.delete(n);
@@ -156,6 +194,7 @@ export class FrameCache {
     let frame: Frame | undefined;
     try {
       const blob = await fetchWithCacheStorage(media(this.previewPath(n)), controller.signal);
+      this.previewBlobs.set(n, blob);
       if (typeof createImageBitmap === 'function') {
         frame = await createImageBitmap(blob);
       } else {
@@ -174,7 +213,7 @@ export class FrameCache {
         return;
       }
       this.previewFrames.set(n, frame);
-      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 4) {
+      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 6) {
         this.update();
       }
     } catch {
@@ -186,11 +225,9 @@ export class FrameCache {
   }
 
   nearest(): { index: number; image: Frame } | undefined {
-    // 1. Exact match on real frame
     if (this.frames.has(this.target)) {
       return { index: this.target, image: this.frames.get(this.target)! };
     }
-    // 2. Distance-First search across real frames
     let best = Infinity, result: { index: number; image: Frame } | undefined;
     for (const [n, image] of this.frames) {
       if (n === this.last && this.target < this.last) continue;
@@ -200,8 +237,7 @@ export class FrameCache {
         result = { index: n, image };
       }
     }
-    // 3. If no close real frame, fallback to nearest preview frame
-    if (best > 6 && this.previewFrames.size > 0) {
+    if (best > 4 && this.previewFrames.size > 0) {
       for (const [n, image] of this.previewFrames) {
         if (n === this.last && this.target < this.last) continue;
         const d = Math.abs(n - this.target);
@@ -226,6 +262,8 @@ export class FrameCache {
     this.frames.clear();
     for (const frame of this.previewFrames.values()) dispose(frame);
     this.previewFrames.clear();
+    this.compressedBlobs.clear();
+    this.previewBlobs.clear();
     this.wanted = [];
   }
 
@@ -251,5 +289,7 @@ export class FrameCache {
     this.frames.clear();
     for (const frame of this.previewFrames.values()) dispose(frame);
     this.previewFrames.clear();
+    this.compressedBlobs.clear();
+    this.previewBlobs.clear();
   }
 }
