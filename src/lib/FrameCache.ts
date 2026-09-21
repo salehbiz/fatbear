@@ -6,6 +6,14 @@ function dispose(frame: Frame) { if ('close' in frame) frame.close(); }
 
 const CACHE_NAME = 'fatbear-frame-cache-v3';
 
+function getMaxConcurrency(): number {
+  const conn = (navigator as any)?.connection;
+  if (conn?.effectiveType === '2g' || conn?.effectiveType === '3g' || conn?.saveData) return 4;
+  if (conn?.effectiveType === '4g' && typeof conn?.downlink === 'number' && conn.downlink < 5) return 6;
+  return 8;
+}
+const MAX_CONCURRENT = typeof navigator !== 'undefined' ? getMaxConcurrency() : 6;
+
 async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise<Blob> {
   if (typeof caches !== 'undefined') {
     try {
@@ -89,7 +97,7 @@ export class FrameCache {
         window.removeEventListener('scroll', enable);
       };
       window.addEventListener('scroll', enable, { passive: true });
-      setTimeout(enable, 2500);
+      setTimeout(enable, 800);
     }
   }
 
@@ -123,12 +131,12 @@ export class FrameCache {
         needed++;
       }
     }
-    if (needed > 0 && this.pending.size + needed > 6) {
+    if (needed > 0 && this.pending.size + needed > MAX_CONCURRENT) {
       for (const [n, controller] of this.pending) {
         if (!this.wantedSet.has(n)) {
           controller.abort();
           this.pending.delete(n);
-          if (this.pending.size + needed <= 6) break;
+          if (this.pending.size + needed <= MAX_CONCURRENT) break;
         }
       }
     }
@@ -166,8 +174,8 @@ export class FrameCache {
       }
     }
 
-    // 2. Fetch queue: up to 6 concurrent network fetches
-    while (this.pending.size < 6) {
+    // 2. Fetch queue: connection-aware concurrent network fetches (4–8 slots)
+    while (this.pending.size < MAX_CONCURRENT) {
       let n: number | undefined;
 
       // Highest priority: missing wanted candidate
