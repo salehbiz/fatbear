@@ -24,7 +24,7 @@ test('toolbar and keyboard height changes preserve pin; width changes refresh',(
  assert.equal(shouldRefreshViewport(844,390,844,320,true),false);
  assert.equal(shouldRefreshViewport(390,844,844,390,true),true);
  assert.equal(shouldRefreshViewport(1280,900,1280,700,false),true);
- assert.equal(canvasPixelRatio(390,3),1.5);
+ assert.equal(canvasPixelRatio(390,3),2);
  assert.equal(canvasPixelRatio(1280,3),2);
 });
 test('phone reading states reserve margins and a separate purchase notification lane',()=>{

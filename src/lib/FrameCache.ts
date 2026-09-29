@@ -5,6 +5,21 @@ type Frame = ImageBitmap | HTMLImageElement;
 function dispose(frame: Frame) { if ('close' in frame) frame.close(); }
 
 const CACHE_NAME = 'fatbear-frame-cache-v3';
+// Previews stay compressed for the whole film; only those this close to the playhead are held decoded.
+const PREVIEW_RADIUS = 48;
+
+async function decodeImage(blob: Blob): Promise<Frame> {
+  if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 function getMaxConcurrency(): number {
   const conn = (navigator as any)?.connection;
@@ -39,6 +54,8 @@ export class FrameCache {
   private frames = new Map<number, Frame>();
   private previewFrames = new Map<number, Frame>();
   private compressedBlobs = new Map<number, Blob>();
+  private previewBlobs = new Map<number, Blob>();
+  private previewDecoding = new Set<number>();
 
   private pending = new Map<number, AbortController>();
   private previewPending = new Map<number, AbortController>();
@@ -56,7 +73,6 @@ export class FrameCache {
   private previewIndex = 0;
   private strideOrder: number[] = [];
   private strideIndex = 0;
-  private hasShownFullRes = false;
 
   // Background preloader is unblocked either when target > 0 (user scrolled)
   // or after idle callback / timeout in the browser, leaving initial LCP unconstrained.
@@ -153,6 +169,12 @@ export class FrameCache {
         this.frames.delete(n);
       }
     }
+    for (const [n, frame] of this.previewFrames) {
+      if (Math.abs(n - this.target) > PREVIEW_RADIUS) {
+        dispose(frame);
+        this.previewFrames.delete(n);
+      }
+    }
     // Retain compressed blobs in memory for instant re-decode on reverse scrub or jump
     const blobLimit = Math.max(this.limit * 6, this.last + 1);
     if (this.compressedBlobs.size > blobLimit) {
@@ -212,11 +234,18 @@ export class FrameCache {
       break;
     }
 
-    // 3. Up to 2 concurrent preview fetches when background preloading is active
+    // 3. Re-decode previews that came back into range after a jump
+    for (let d = 0; d <= PREVIEW_RADIUS && this.previewDecoding.size < 4; d++) {
+      for (const p of d ? [this.target + d, this.target - d] : [this.target]) {
+        if (this.previewBlobs.has(p) && !this.previewFrames.has(p) && !this.previewDecoding.has(p)) void this.decodePreview(p);
+      }
+    }
+
+    // 4. Up to 2 concurrent preview fetches when background preloading is active
     if (this.previewPath && this.previewPending.size < 2 && this.backgroundEnabled) {
       while (this.previewPending.size < 2 && this.previewIndex < this.previewOrder.length) {
         const p = this.previewOrder[this.previewIndex++];
-        if (!this.previewFrames.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p) && !this.frames.has(p)) {
+        if (!this.previewBlobs.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p) && !this.frames.has(p)) {
           const controller = new AbortController();
           this.previewPending.set(p, controller);
           void this.loadPreview(p, controller);
@@ -230,19 +259,7 @@ export class FrameCache {
     this.decoding.add(n);
     let frame: Frame | undefined;
     try {
-      if (typeof createImageBitmap === 'function') {
-        frame = await createImageBitmap(blob);
-      } else {
-        const url = URL.createObjectURL(blob);
-        try {
-          const img = new Image();
-          img.src = url;
-          await img.decode();
-          frame = img;
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-      }
+      frame = await decodeImage(blob);
       if (this.destroyed || !this.active || !this.wantedSet.has(n)) {
         if (frame) dispose(frame);
         return;
@@ -252,7 +269,6 @@ export class FrameCache {
       }
       this.frames.set(n, frame);
       this.evict();
-      this.hasShownFullRes = true;
       this.update();
     } catch {
       // Decode error
@@ -280,35 +296,35 @@ export class FrameCache {
 
   private async loadPreview(n: number, controller: AbortController) {
     if (!this.previewPath) return;
-    let frame: Frame | undefined;
     try {
       const blob = await fetchWithCacheStorage(media(this.previewPath(n)), controller.signal);
-      if (typeof createImageBitmap === 'function') {
-        frame = await createImageBitmap(blob);
-      } else {
-        const url = URL.createObjectURL(blob);
-        try {
-          const img = new Image();
-          img.src = url;
-          await img.decode();
-          frame = img;
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-      }
-      if (this.destroyed || !this.active || controller.signal.aborted) {
+      if (this.destroyed || controller.signal.aborted) return;
+      this.previewBlobs.set(n, blob);
+      if (this.active) await this.decodePreview(n);
+    } catch {
+      if (!controller.signal.aborted) this.previewFailed.add(n);
+    } finally {
+      this.previewPending.delete(n);
+      this.pump();
+    }
+  }
+
+  private async decodePreview(n: number) {
+    const blob = this.previewBlobs.get(n);
+    if (!blob || this.previewDecoding.has(n) || this.previewFrames.has(n) || Math.abs(n - this.target) > PREVIEW_RADIUS) return;
+    this.previewDecoding.add(n);
+    try {
+      const frame = await decodeImage(blob);
+      if (this.destroyed || !this.active || Math.abs(n - this.target) > PREVIEW_RADIUS) {
         dispose(frame);
         return;
       }
       this.previewFrames.set(n, frame);
-      if (!this.hasShownFullRes && !this.frames.has(this.target) && Math.abs(n - this.target) <= 8) {
-        this.update();
-      }
+      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 8) this.update();
     } catch {
       this.previewFailed.add(n);
     } finally {
-      this.previewPending.delete(n);
-      this.pump();
+      this.previewDecoding.delete(n);
     }
   }
 
@@ -360,7 +376,6 @@ export class FrameCache {
     this.compressedBlobs.clear();
     this.wanted = [];
     this.wantedSet.clear();
-    this.hasShownFullRes = false;
     this.strideIndex = 0;
   }
 
@@ -372,6 +387,7 @@ export class FrameCache {
     return {
       decoded: this.frames.size,
       previewDecoded: this.previewFrames.size,
+      previews: this.previewBlobs.size,
       blobs: this.compressedBlobs.size,
       pending: this.pending.size,
       failed: this.failed.size,
@@ -387,6 +403,7 @@ export class FrameCache {
     this.frames.clear();
     for (const frame of this.previewFrames.values()) dispose(frame);
     this.previewFrames.clear();
+    this.previewBlobs.clear();
     this.compressedBlobs.clear();
     this.strideIndex = 0;
   }

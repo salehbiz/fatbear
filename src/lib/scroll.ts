@@ -8,8 +8,8 @@ import manifest from './manifest';
 import { FrameCache } from './FrameCache';
 import { FilmRenderer } from './FilmRenderer';
 import { revealAt } from './reveal-motion.mjs';
-import { EXPANSION_END, coverRect, focalAt, frameAt, mix, range, smooth } from './math.mjs';
-import { getFrameTier } from './frameTier';
+import { EXPANSION_END, PORTRAIT, coverRect, focalAt, frameAt, mix, portraitFocalAt, range, smooth } from './math.mjs';
+import { getFrameTier, portraitFilm } from './frameTier';
 gsap.registerPlugin(ScrollTrigger);
 
 export function createScroll(root: HTMLElement) {
@@ -47,19 +47,24 @@ export function createScroll(root: HTMLElement) {
   let previousWorld = -1;
   const lastFrame = manifest.lastFrame; // First fully black frame. Trailing black excluded.
   const tier = getFrameTier();
-  const tierDir = tier === '4k' ? 'frames-4k' : tier === 'mobile' ? 'frames-mobile' : 'frames';
+  // Portrait screens load 1080×1920 frames cut from the 8K master along focalAt; landscape screens load 16:9 by pixel need.
+  const portrait = portraitFilm() && tier !== '4k';
+  const tierDir = portrait ? 'frames-portrait' : tier === '4k' ? 'frames-4k' : tier === 'mobile' ? 'frames-mobile' : 'frames';
+  const source = portrait ? { w: PORTRAIT.w, h: PORTRAIT.h, focal: portraitFocalAt } : { w: 1280, h: 720, focal: focalAt };
+  // Decoded 4K bitmaps are 33 MB each, so the sharp window stays small there; compressed blobs keep the rest instant.
+  const frameLimit = tier === '4k' ? 24 : portrait ? 28 : 48;
   const cache = new FrameCache(
     lastFrame,
-    tier === '4k' ? 40 : tier === 'mobile' ? 60 : 48,
+    frameLimit,
     () => draw(),
     n => `${tierDir}/${String(n + 1).padStart(4, '0')}.webp`,
-    n => `frames-preview/${String(n + 1).padStart(4, '0')}.webp`
+    n => `${portrait ? 'frames-portrait-preview' : tier === 'mobile' ? 'frames-preview' : 'frames-mobile'}/${String(n + 1).padStart(4, '0')}.webp`
   );
   let targetProgress = 0;
   const touch = matchMedia('(pointer: coarse)').matches;
   function measure() {
     w = innerWidth; h = innerHeight;
-    cache.setLimit(tier === '4k' ? 40 : tier === 'mobile' ? 60 : 48);
+    cache.setLimit(frameLimit);
     stage.style.height = `${h}px`;
     const box = slot.getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
     initial = { x: box.left - stageBox.left, y: box.top - stageBox.top, w: box.width, h: box.height };
@@ -89,7 +94,7 @@ export function createScroll(root: HTMLElement) {
     if (!frame) return;
     const signature = `${frame.index}:${filmW.toFixed(2)}:${filmH.toFixed(2)}:${reveal.active}:${reveal.dissolve.toFixed(4)}:${reveal.grayscale.toFixed(3)}`;
     if (lastDraw === signature) return;
-    const r = coverRect(filmW, filmH, 1280, 720, focalAt(frame.index));
+    const r = coverRect(filmW, filmH, source.w, source.h, source.focal(frame.index));
     if (film3d) {
       if (!film3d.draw(frame.index, frame.image, { film: [filmW, filmH], crop: r, center: [focus.x, focus.y], reveal, paper, ink })) return;
     } else if (ctx) {

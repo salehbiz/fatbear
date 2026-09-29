@@ -59,3 +59,21 @@ test('a missing target frame falls back without a retry loop', async () => {
   try {cache.request(50); await flush(); cache.request(50); await flush(); assert.equal(attempts,1); assert.ok(cache.nearest()); assert.notEqual(cache.nearest().index,50);}
   finally{cache.destroy();globalThis.fetch=fetchBefore;globalThis.createImageBitmap=bitmapBefore;console.warn=warnBefore;}
 });
+
+test('decoded previews stay within a window of the playhead and come back after a jump', async () => {
+  const fetchBefore=globalThis.fetch, bitmapBefore=globalThis.createImageBitmap;
+  const images=[];
+  globalThis.fetch = async url => url.includes('/full/') ? new Promise(()=>{}) : ({ok:true,blob:async()=>new Blob([url])});
+  globalThis.createImageBitmap = async () => { const image={closed:false,close(){this.closed=true;}}; images.push(image); return image; };
+  const cache=new FrameCache(169,24,()=>{},n=>`full/${n}.webp`,n=>`preview/${n}.webp`);
+  try {
+    cache.request(0);
+    for (let i=0;i<400;i++) await flush();
+    assert.equal(cache.stats().previews,170);
+    assert.ok(cache.stats().previewDecoded<=49);
+    cache.request(169); for (let i=0;i<50;i++) await flush();
+    assert.ok(cache.stats().previewDecoded<=49);
+    assert.ok(images.some(i=>i.closed));
+    assert.equal(cache.nearest().index,169);
+  } finally { cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
+});

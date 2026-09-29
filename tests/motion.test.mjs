@@ -42,3 +42,13 @@ test('illustrative growth is bounded, monotonic and reversible at chapter bounda
   assert.ok(values.every((n,i)=>i===0 || n>=values[i-1]));
   assert.deepEqual(values.toReversed(), Array.from({length:1001}, (_,i)=>attentionAt((1000-i)/1000)));
 });
+
+test('the baked portrait crop and the renderer agree on where the subject sits', async () => {
+  const { focalAt, portraitCrop, portraitFocalAt } = await import('../src/lib/math.mjs');
+  for (let frame = 0; frame <= 169; frame += 13) {
+    const crop = portraitCrop(7680, 4320, focalAt(frame).x);
+    assert.equal(crop.w, 2430); assert.ok(crop.x >= 0 && crop.x + crop.w <= 7680);
+    const inCrop = (focalAt(frame).x * 7680 - crop.x) / crop.w;
+    assert.ok(Math.abs(inCrop - portraitFocalAt(frame).x) < .002);
+  }
+});

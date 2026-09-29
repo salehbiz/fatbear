@@ -21,6 +21,21 @@ export function focalAt(frame) {
   return { x: .5, y: .5 };
 }
 
+// Phones get a 9:16 tier cut from the 8K master around focalAt, so the renderer's crop and the baked crop agree.
+export const PORTRAIT = { w: 1080, h: 1920, previewW: 432, previewH: 768 };
+const PORTRAIT_SPAN = (9 / 16) * (9 / 16); // 9:16 crop width as a fraction of a 16:9 frame's width
+const portraitLeft = x => clamp(x - PORTRAIT_SPAN / 2, 0, 1 - PORTRAIT_SPAN);
+// Pixel crop of a 16:9 source frame for the build script.
+export function portraitCrop(sw, sh, focalX) {
+  const w = Math.round(sh * 9 / 16 / 2) * 2;
+  return { x: Math.min(sw - w, Math.round(portraitLeft(focalX) * sw)), w, h: sh };
+}
+// focalAt expressed inside the baked portrait crop.
+export function portraitFocalAt(frame) {
+  const f = focalAt(frame);
+  return { x: (f.x - portraitLeft(f.x)) / PORTRAIT_SPAN, y: f.y };
+}
+
 export function coverRect(w, h, sw, sh, focal) {
   const scale = Math.max(w / sw, h / sh);
   const dw = sw * scale, dh = sh * scale;

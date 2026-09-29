@@ -9,9 +9,11 @@
     <link rel="preload" href="/media/poster-phone.webp" as="image" type="image/webp" media="(max-width: 600px)" fetchpriority="high" />
     <link rel="preload" href="/media/poster-mobile.webp" as="image" type="image/webp" media="(min-width: 601px) and (max-width: 1024px)" fetchpriority="high" />
     <link rel="preload" href="/media/poster.webp" as="image" type="image/webp" media="(min-width: 1025px)" fetchpriority="high" />
-    <link rel="preload" href="/media/frames-mobile/0001.webp" as="image" type="image/webp" media="(max-width: 767px)" />
-    <link rel="preload" href="/media/frames/0001.webp" as="image" type="image/webp" media="(min-width: 768px) and (max-width: 1439px)" />
-    <link rel="preload" href="/media/frames-4k/0001.webp" as="image" type="image/webp" media="(min-width: 1440px)" />
+    <!-- First film frame of the tier getFrameTier() will pick (src/lib/frameTier.ts). -->
+    <link rel="preload" href="/media/frames-portrait/0001.webp" as="image" type="image/webp" media="(orientation: portrait) and (max-width: 1100px)" />
+    <link rel="preload" href="/media/frames-mobile/0001.webp" as="image" type="image/webp" media="(orientation: landscape) and (max-width: 767px)" />
+    <link rel="preload" href="/media/frames/0001.webp" as="image" type="image/webp" media="(orientation: landscape) and (min-width: 768px) and (max-width: 1100px), (orientation: landscape) and (min-width: 1101px) and (max-width: 2200px) and (max-resolution: 1.99dppx)" />
+    <link rel="preload" href="/media/frames-4k/0001.webp" as="image" type="image/webp" media="(min-width: 1101px) and (min-resolution: 2dppx), (min-width: 2201px)" />
     <title>Fat Bear — A membership club for creators</title>
   </head>
   <body>
