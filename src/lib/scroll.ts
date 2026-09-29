@@ -48,15 +48,15 @@ export function createScroll(root: HTMLElement) {
   const lastFrame = manifest.lastFrame; // First fully black frame. Trailing black excluded.
   const tier = getFrameTier();
   // Portrait screens load 1080×1920 frames cut from the 8K master along focalAt; landscape screens load 16:9.
-  const portrait = portraitFilm() && tier !== '4k';
+  const portrait = portraitFilm() && tier !== 'hq';
   // [full quality, preview pyramid, fallback if full quality is too slow]
   const [tierDir, previewDir, fallbackDir] = portrait ? ['frames-portrait', 'frames-portrait-preview', null]
-    : tier === '4k' ? ['frames-4k', 'frames-mobile', 'frames']
-    : tier === 'desktop' ? ['frames', 'frames-preview', 'frames-mobile']
-    : ['frames-mobile', 'frames-preview', null];
+    : tier === 'hq' ? ['frames-2560', 'frames-preview-hd', 'frames-1920']
+    : tier === 'desktop' ? ['frames-1920', 'frames-preview-hd', null]
+    : ['frames-mobile', 'frames-preview-hd', null];
   const source = portrait ? { w: PORTRAIT.w, h: PORTRAIT.h, focal: portraitFocalAt } : { w: 1280, h: 720, focal: focalAt };
-  // Decoded 4K bitmaps are 33 MB each, so the sharp window stays small there; compressed blobs keep the rest instant.
-  const frameLimit = tier === '4k' ? 24 : portrait ? 28 : 48;
+  // Decoded 2560 bitmaps are 15 MB each, so the sharp window stays small there; compressed blobs keep the rest instant.
+  const frameLimit = tier === 'hq' ? 24 : portrait ? 28 : 40;
   const path = (dir: string) => (n: number) => `${dir}/${String(n + 1).padStart(4, '0')}.webp`;
   const cache = new FrameCache(lastFrame, frameLimit, () => draw(), path(tierDir), path(previewDir), fallbackDir ? path(fallbackDir) : undefined);
   let targetProgress = 0;

@@ -42,7 +42,7 @@ export default function App() {
         {/* Portrait screens get frame 1 of the portrait tier, so the poster is as sharp as the film it hands over to. */}
         <picture>
           <source media="(orientation: portrait) and (max-width: 1100px)" srcSet={media('poster-portrait.webp')}/>
-          <img className="poster" srcSet={`${media('poster-phone.webp')} 960w, ${media('poster-mobile.webp')} 1920w, ${media('poster.webp')} 3840w`} sizes="100vw" src={media('poster-mobile.webp')} width="1280" height="720" fetchPriority="high" alt="A creator standing beside a sunlit pool"/>
+          <img className="poster" srcSet={`${media('poster-phone.webp')} 960w, ${media('poster-mobile.webp')} 1920w, ${media('poster-2560.webp')} 2560w`} sizes="100vw" src={media('poster-mobile.webp')} width="1280" height="720" fetchPriority="high" alt="A creator standing beside a sunlit pool"/>
         </picture>
         <canvas className="film-canvas" aria-hidden="true"/>
       </div>

@@ -23,9 +23,9 @@ export function createBusinessMotion(root:HTMLElement){
  let start={x:0,y:0,w:320,h:180},end={...start},box=dashboardBox(innerWidth,innerHeight),current=0,active=false,drawn=-1,drawnImage:unknown=null,disposed=false;
  const tier = getFrameTier();
  // [full quality, fallback if full quality is too slow]; every tier scrubs on the crew-preview pyramid first.
- const [crewDir,fallbackDir]=tier==='4k'?['crew-4k','crew-webp']:tier==='desktop'?['crew-webp','crew-mobile']:['crew-mobile',null];
+ const [crewDir,fallbackDir]=tier==='hq'?['crew-2560','crew-1920']:tier==='desktop'?['crew-1920',null]:['crew-mobile',null];
  const path=(dir:string)=>(n:number)=>`business/${dir}/${String(n+1).padStart(4,'0')}.webp`;
- const cache=new FrameCache(BUSINESS_LAST_FRAME,tier==='4k'?28:tier==='mobile'?50:40,draw,path(crewDir),path('crew-preview'),fallbackDir?path(fallbackDir):undefined);
+ const cache=new FrameCache(BUSINESS_LAST_FRAME,tier==='hq'?28:tier==='mobile'?50:40,draw,path(crewDir),path('crew-preview-hd'),fallbackDir?path(fallbackDir):undefined);
  function style(el:HTMLElement,key:'transform'|'opacity'|'visibility'|'filter',value:string){if(el.style[key]!==value)el.style[key]=value;}
  function alpha(el:HTMLElement,n:number){style(el,'opacity',String(n));style(el,'visibility',n===0?'hidden':'inherit');}
  function local(el:HTMLElement,parent:HTMLElement){
@@ -72,7 +72,7 @@ export function createBusinessMotion(root:HTMLElement){
    const cover=local(get('.passes-cover'),passes),preview=local(get('.business-preview'),dashboard);
    start={x:pass.x+cover.x,y:pass.y+cover.y,w:cover.w,h:cover.h};
    end={x:box.x+preview.x,y:box.y+preview.y,w:preview.w,h:preview.h};
-   photo.measure({w,h});cache.setLimit(tier==='4k'?28:tier==='mobile'?50:40);
+   photo.measure({w,h});cache.setLimit(tier==='hq'?28:tier==='mobile'?50:40);
   },
   render(p:number,w:number,h:number,visible:boolean,warm=false){
    current=p;active=visible;viewport={w,h};

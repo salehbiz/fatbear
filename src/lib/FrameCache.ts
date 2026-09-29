@@ -1,15 +1,16 @@
 import { frameWindow } from './math.mjs';
 import { media } from './media';
 
-// Resilient two-phase frame loader (resilient-hero-scrub):
-//   Phase A — small preview frames for the whole film in stride-pyramid order (8 → 4 → 2 → 1), so the film
-//             scrubs end to end after a few hundred KB.
-//   Phase B — full-quality frames only in a window around the playhead, nearest first, biased toward the
-//             scroll direction. The film is never streamed in full quality in the background.
-// One addition: the exact playhead frame always gets a full-quality slot, even during Phase A, so whatever
-// the viewer is resting on sharpens first. The opening never shows a preview: until a full-quality frame
-// is ready the poster stays up, and a sharp frame up to HOLD frames away is held over a nearer preview.
-// A full-quality tier that errors or is too slow for the connection steps down to the fallback tier once.
+// Frame loader modelled on the Vaultfy hero (vaultfy.ai, src/components/FrameScrub.jsx). One pool of fetch
+// slots, filled in this order:
+//   1. the frame on screen at full quality, plus the few ahead of it, so the opening is sharp at once
+//   2. previews around the playhead
+//   3. preview stride passes 8 and 4, which make the whole film scrubbable
+//   4. full quality around the playhead
+//   5. the remaining previews
+//   6. once the page has loaded, the rest of the film at full quality in stride order
+// Until a full-quality frame is ready the poster stays up, and a sharp frame up to HOLD frames away is held
+// over a nearer preview. The high tier steps down to its fallback once if its frames fail or are too slow.
 
 type Frame = ImageBitmap | HTMLImageElement;
 function dispose(frame: Frame) { if ('close' in frame) frame.close(); }
@@ -23,9 +24,18 @@ const SLOW_FRAME_MS = 4000;
 const HOLD = 8;
 
 const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-const PREVIEW_SLOTS = coarse ? 6 : 8;
-const REAL_SLOTS = coarse ? 4 : 6;
-const REAL_WINDOW = coarse ? 25 : 40;
+const SLOTS = 6;
+const PREVIEW_AROUND = 15;
+const REAL_AROUND = coarse ? 6 : 12;
+// Bulk full-quality streaming waits for the page's own load so it never competes with CSS, JS or the poster.
+let bulkAllowed = typeof document === 'undefined' || document.readyState === 'complete';
+const bulkWaiters = new Set<() => void>();
+if (!bulkAllowed) {
+  addEventListener('load', () => {
+    const go = () => { bulkAllowed = true; bulkWaiters.forEach(wake => wake()); };
+    if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 1000 }); else setTimeout(go, 200);
+  }, { once: true });
+}
 
 async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise<Blob> {
   if (typeof caches !== 'undefined') {
@@ -81,7 +91,10 @@ export class FrameCache {
   private direction = 1;
   private active = false;
   private previewOrder: number[] = [];
+  private previewHead = 0;
+  private bulkOrder: number[] = [];
   private fallenBack = false;
+  private wake = () => this.pump();
 
   constructor(
     private last: number,
@@ -91,17 +104,18 @@ export class FrameCache {
     private previewPath?: (index: number) => string,
     private fallbackPath?: (index: number) => string
   ) {
-    const seen = new Set<number>();
-    for (const stride of [8, 4, 2, 1]) {
-      for (let i = 0; i <= last; i += stride) {
-        if (!seen.has(i)) { seen.add(i); this.previewOrder.push(i); }
+    const strideOrder = (step: number) => {
+      const order: number[] = [], seen = new Set<number>();
+      for (const stride of [8, 4, 2, 1]) {
+        for (let i = 0; i <= last; i += stride * step) if (!seen.has(i)) { seen.add(i); order.push(i); }
       }
-    }
-    if (!seen.has(last)) this.previewOrder.push(last);
-  }
-
-  private get previewsDone() {
-    return !this.previewPath || this.previewBlobs.size + this.previewFailed.size >= this.previewOrder.length;
+      return order;
+    };
+    this.previewOrder = strideOrder(1);
+    this.previewHead = this.previewOrder.filter(n => n % 4 === 0).length;
+    // Phones stream every other frame in bulk; the playhead window fills the gaps where the viewer is.
+    this.bulkOrder = strideOrder(coarse ? 2 : 1);
+    bulkWaiters.add(this.wake);
   }
 
   request(target: number) {
@@ -113,14 +127,6 @@ export class FrameCache {
     // Decode window: bitmaps held around the playhead, weighted toward the scroll direction.
     this.wanted = frameWindow(target, this.last, this.limit, this.direction);
     this.wantedSet = new Set(this.wanted);
-
-    // Free full-quality slots held by frames the playhead has left behind.
-    for (const [n, controller] of this.pending) {
-      if (n !== target && Math.abs(n - target) > REAL_WINDOW) {
-        controller.abort();
-        this.pending.delete(n);
-      }
-    }
 
     this.evict();
     this.pump();
@@ -139,12 +145,7 @@ export class FrameCache {
         this.previewFrames.delete(n);
       }
     }
-    // Compressed full-quality frames are kept for instant re-decode, bounded around the playhead.
-    const blobLimit = Math.max(this.limit * 4, REAL_WINDOW * 2 + 1);
-    if (this.compressedBlobs.size > blobLimit) {
-      const far = [...this.compressedBlobs.keys()].sort((a, b) => Math.abs(a - this.target) - Math.abs(b - this.target));
-      while (this.compressedBlobs.size > blobLimit && far.length) this.compressedBlobs.delete(far.pop()!);
-    }
+    // Compressed frames are all kept (as Vaultfy does) so any position re-decodes without a fetch.
   }
 
   private needsReal(n: number) {
@@ -165,31 +166,35 @@ export class FrameCache {
       }
     }
 
-    // The frame on screen always gets full quality first, and the next few ahead of it stay sharp while previews load.
-    if (this.needsReal(this.target)) this.loadReal(this.target);
-    for (let d = 1; d <= HOLD && this.pending.size < 3; d++) {
-      const n = this.target + d * this.direction;
-      if (n >= 0 && n <= this.last && this.needsReal(n)) this.loadReal(n);
-    }
-
-    // Phase A: preview pyramid.
-    if (this.previewPath) {
-      for (const p of this.previewOrder) {
-        if (this.previewPending.size >= PREVIEW_SLOTS) break;
-        if (!this.previewBlobs.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p)) this.loadPreview(p);
+    const busy = () => this.pending.size + this.previewPending.size >= SLOTS;
+    const around = (radius: number, missing: (n: number) => boolean) => {
+      for (let d = 0; d <= radius; d++) {
+        for (const n of d ? [this.target + d * this.direction, this.target - d * this.direction] : [this.target]) {
+          if (n >= 0 && n <= this.last && missing(n)) return n;
+        }
       }
-    }
-
-    // Phase B: full quality around the playhead once the whole film is scrubbable.
-    if (!this.previewsDone) return;
-    const lo = Math.max(0, this.target - REAL_WINDOW), hi = Math.min(this.last, this.target + REAL_WINDOW);
-    const candidates: number[] = [];
-    for (let n = lo; n <= hi; n++) if (this.needsReal(n)) candidates.push(n);
-    const cost = (n: number) => Math.abs(n - this.target) * (Math.sign(n - this.target) === this.direction ? .7 : 1);
-    candidates.sort((a, b) => cost(a) - cost(b));
-    for (const n of candidates) {
-      if (this.pending.size >= REAL_SLOTS) break;
-      this.loadReal(n);
+    };
+    const needsPreview = (n: number) => !!this.previewPath && !this.previewBlobs.has(n) && !this.previewPending.has(n) && !this.previewFailed.has(n);
+    const nextPreview = (count: number) => this.previewOrder.slice(0, count).find(needsPreview);
+    const next = (): [number, boolean] | undefined => {
+      let n: number | undefined;
+      // 1. The frame on screen and the next few ahead, at full quality.
+      if (this.pending.size < 3) {
+        for (let d = 0; d <= HOLD && n === undefined; d++) {
+          const f = this.target + d * this.direction;
+          if (f >= 0 && f <= this.last && this.needsReal(f)) n = f;
+        }
+        if (n !== undefined) return [n, false];
+      }
+      if ((n = around(PREVIEW_AROUND, needsPreview)) !== undefined) return [n, true];
+      if ((n = nextPreview(this.previewHead)) !== undefined) return [n, true];
+      if ((n = around(REAL_AROUND, f => this.needsReal(f))) !== undefined) return [n, false];
+      if ((n = nextPreview(this.previewOrder.length)) !== undefined) return [n, true];
+      if (!bulkAllowed) return;
+      if ((n = this.bulkOrder.find(f => this.needsReal(f))) !== undefined) return [n, false];
+    };
+    for (let item = next(); item && !busy(); item = next()) {
+      if (item[1]) this.loadPreview(item[0]); else this.loadReal(item[0]);
     }
   }
 
@@ -350,6 +355,7 @@ export class FrameCache {
 
   destroy() {
     this.destroyed = true;
+    bulkWaiters.delete(this.wake);
     this.pause();
     for (const frame of this.frames.values()) dispose(frame);
     this.frames.clear();

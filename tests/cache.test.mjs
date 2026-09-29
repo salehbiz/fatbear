@@ -63,7 +63,7 @@ test('a missing target frame falls back without a retry loop', async () => {
 test('decoded previews stay within a window of the playhead and come back after a jump', async () => {
   const fetchBefore=globalThis.fetch, bitmapBefore=globalThis.createImageBitmap;
   const images=[];
-  globalThis.fetch = async url => url.includes('/full/') ? new Promise(()=>{}) : ({ok:true,blob:async()=>new Blob([url])});
+  globalThis.fetch = async url => url.includes('/full/') ? ({ok:false,status:404}) : ({ok:true,blob:async()=>new Blob([url])});
   globalThis.createImageBitmap = async () => { const image={closed:false,close(){this.closed=true;}}; images.push(image); return image; };
   const cache=new FrameCache(169,24,()=>{},n=>`full/${n}.webp`,n=>`preview/${n}.webp`);
   try {
@@ -78,7 +78,7 @@ test('decoded previews stay within a window of the playhead and come back after 
   } finally { cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
 });
 
-test('previews cover the whole film before full quality leaves the playhead', async () => {
+test('fetch order follows the Vaultfy hero: sharp playhead, previews, sharp window, rest of previews, bulk', async () => {
   const fetchBefore=globalThis.fetch, bitmapBefore=globalThis.createImageBitmap;
   const order=[];
   globalThis.fetch = async url => { order.push(url.replace('https://test.invalid/','')); return {ok:true,blob:async()=>new Blob()}; };
@@ -86,16 +86,18 @@ test('previews cover the whole film before full quality leaves the playhead', as
   const cache=new FrameCache(169,24,()=>{},n=>`full/${n}`,n=>`preview/${n}`);
   try {
     cache.request(30);
-    for (let i=0;i<400;i++) await flush();
-    const firstFull=order.findIndex(u=>u.startsWith('full/'));
-    assert.equal(order[firstFull],'full/30');
-    // Only the playhead and the few frames just ahead of it load sharp before the preview pass completes.
-    const opening=new Set(Array.from({length:9},(_,d)=>`full/${30+d}`));
-    const otherFull=order.findIndex(u=>u.startsWith('full/')&&!opening.has(u));
-    const lastPreview=order.map(u=>u.startsWith('preview/')).lastIndexOf(true);
-    assert.ok(otherFull>lastPreview);
-    assert.deepEqual(order.filter(u=>u.startsWith('preview/')).slice(0,3),['preview/0','preview/8','preview/16']);
-    assert.ok(!order.includes('full/71') && !order.includes('full/169'));
+    for (let i=0;i<600;i++) await flush();
+    const at = u => order.indexOf(u);
+    assert.equal(order[0],'full/30');
+    // Opening: the playhead and the frames just ahead come sharp before anything else.
+    assert.ok(at('full/31')<at('preview/0') && at('full/32')<at('preview/0'));
+    // Previews around the playhead, then the stride-8/4 passes, before the sharp window beyond the opening.
+    assert.ok(at('preview/45')<at('full/42'));
+    assert.ok(at('preview/168')<at('full/42'));
+    // The remaining previews finish before bulk full-quality streaming starts.
+    assert.ok(at('preview/167')<at('full/100'));
+    // Everything ends up loaded: the whole film streams at full quality once the page has loaded.
+    assert.equal(order.filter(u=>u.startsWith('full/')).length,170);
     assert.equal(cache.nearest().index,30);
   } finally { cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
 });

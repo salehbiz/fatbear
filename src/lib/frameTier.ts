@@ -1,10 +1,9 @@
-export type FrameTier = '4k' | 'desktop' | 'mobile';
+export type FrameTier = 'hq' | 'desktop' | 'mobile';
 
-// resilient-hero-scrub tiering: phones get the mobile tier, and the high tier needs a high-density
-// screen on a fast connection. The tiers themselves are sharper than the skill's: 4K instead of 2560,
-// and phones get 1080×1920 portrait frames cut from the 8K master instead of 540×960.
+// Vaultfy / resilient-hero-scrub tiering: phones get the mobile tier, and the 2560 tier needs a high-density
+// screen on a fast connection. Phones get 1080×1920 portrait frames cut from the 8K master.
 export function getFrameTier(): FrameTier {
-  if (typeof window === 'undefined') return '4k';
+  if (typeof window === 'undefined') return 'hq';
   const w = window.innerWidth;
   const dpr = window.devicePixelRatio || 1;
   const conn = (navigator as any)?.connection;
@@ -15,7 +14,7 @@ export function getFrameTier(): FrameTier {
     conn?.effectiveType === 'slow-2g' ||
     (typeof conn?.downlink === 'number' && conn.downlink < 3);
   if (w < 768) return 'mobile';
-  if (dpr >= 1.25 && !slowConn && w * Math.min(dpr, 2) > 2200) return '4k';
+  if (dpr >= 1.25 && !slowConn && w * Math.min(dpr, 2) > 2200) return 'hq';
   return 'desktop';
 }
 
