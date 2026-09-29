@@ -1,6 +1,15 @@
 {
   "headers": [
     {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Link",
+          "value": "</media/poster-portrait.webp>; rel=preload; as=image; type=\"image/webp\"; media=\"(orientation: portrait) and (max-width: 1100px)\"; fetchpriority=high, </media/poster-phone.webp>; rel=preload; as=image; type=\"image/webp\"; media=\"(orientation: landscape) and (max-width: 600px)\"; fetchpriority=high, </media/poster-mobile.webp>; rel=preload; as=image; type=\"image/webp\"; media=\"(orientation: landscape) and (min-width: 601px) and (max-width: 1024px)\"; fetchpriority=high, </media/poster.webp>; rel=preload; as=image; type=\"image/webp\"; media=\"(min-width: 1025px) and (orientation: landscape), (min-width: 1101px)\"; fetchpriority=high"
+        }
+      ]
+    },
+    {
       "source": "/media/frames-4k/(.*)",
       "headers": [
         {

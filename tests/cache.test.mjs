@@ -77,3 +77,57 @@ test('decoded previews stay within a window of the playhead and come back after 
     assert.equal(cache.nearest().index,169);
   } finally { cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
 });
+
+test('previews cover the whole film before full quality leaves the playhead', async () => {
+  const fetchBefore=globalThis.fetch, bitmapBefore=globalThis.createImageBitmap;
+  const order=[];
+  globalThis.fetch = async url => { order.push(url.replace('https://test.invalid/','')); return {ok:true,blob:async()=>new Blob()}; };
+  globalThis.createImageBitmap = async () => ({close(){}});
+  const cache=new FrameCache(169,24,()=>{},n=>`full/${n}`,n=>`preview/${n}`);
+  try {
+    cache.request(30);
+    for (let i=0;i<400;i++) await flush();
+    const firstFull=order.findIndex(u=>u.startsWith('full/'));
+    assert.equal(order[firstFull],'full/30');
+    // Only the playhead and the few frames just ahead of it load sharp before the preview pass completes.
+    const opening=new Set(Array.from({length:9},(_,d)=>`full/${30+d}`));
+    const otherFull=order.findIndex(u=>u.startsWith('full/')&&!opening.has(u));
+    const lastPreview=order.map(u=>u.startsWith('preview/')).lastIndexOf(true);
+    assert.ok(otherFull>lastPreview);
+    assert.deepEqual(order.filter(u=>u.startsWith('preview/')).slice(0,3),['preview/0','preview/8','preview/16']);
+    assert.ok(!order.includes('full/71') && !order.includes('full/169'));
+    assert.equal(cache.nearest().index,30);
+  } finally { cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
+});
+
+test('a failing full-quality tier steps down to the fallback once', async () => {
+  const fetchBefore=globalThis.fetch, bitmapBefore=globalThis.createImageBitmap;
+  const urls=[];
+  globalThis.fetch = async url => { urls.push(url); return url.includes('/hq/') ? {ok:false,status:404} : {ok:true,blob:async()=>new Blob()}; };
+  globalThis.createImageBitmap = async () => ({close(){}});
+  const cache=new FrameCache(40,12,()=>{},n=>`hq/${n}`,undefined,n=>`lite/${n}`);
+  try {
+    cache.request(10); for (let i=0;i<50;i++) await flush();
+    assert.equal(cache.stats().fallenBack,true);
+    assert.equal(urls.filter(u=>u.includes('/hq/')).length<=6,true);
+    assert.equal(cache.nearest().index,10);
+  } finally { cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
+});
+
+test('the opening holds the poster, then sharp frames, and never a nearby preview', async () => {
+  const fetchBefore=globalThis.fetch, bitmapBefore=globalThis.createImageBitmap;
+  const gate=[];
+  globalThis.fetch = async url => { if (url.includes('/full/')) await new Promise(r=>gate.push(r)); return {ok:true,blob:async()=>new Blob([url])}; };
+  globalThis.createImageBitmap = async blob => ({src:await blob.text(),close(){}});
+  const cache=new FrameCache(169,24,()=>{},n=>`full/${n}`,n=>`preview/${n}`);
+  try {
+    cache.request(0); for (let i=0;i<300;i++) await flush();
+    assert.equal(cache.nearest(),undefined);
+    gate.splice(0).forEach(r=>r()); for (let i=0;i<50;i++) await flush();
+    assert.match(cache.nearest().image.src,/full\/0$/);
+    cache.request(5); for (let i=0;i<5;i++) await flush();
+    assert.match(cache.nearest().image.src,/full\//);
+    cache.request(120); for (let i=0;i<20;i++) await flush();
+    assert.match(cache.nearest().image.src,/preview\/120$/);
+  } finally { gate.splice(0).forEach(r=>r()); cache.destroy(); globalThis.fetch=fetchBefore; globalThis.createImageBitmap=bitmapBefore; }
+});

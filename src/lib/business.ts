@@ -20,16 +20,12 @@ export function createBusinessMotion(root:HTMLElement){
  const toasts=[...root.querySelectorAll<HTMLElement>('.business-toast')],transactions=[...root.querySelectorAll<HTMLElement>('.business-transaction')];
  const lines=copies.map(el=>[...el.querySelectorAll<HTMLElement>('h2>span')]),stats=[...root.querySelectorAll<HTMLElement>('.business-stats>div')];
  let viewport={w:innerWidth,h:innerHeight};
- let start={x:0,y:0,w:320,h:180},end={...start},box=dashboardBox(innerWidth,innerHeight),current=0,active=false,drawn=-1,disposed=false;
+ let start={x:0,y:0,w:320,h:180},end={...start},box=dashboardBox(innerWidth,innerHeight),current=0,active=false,drawn=-1,drawnImage:unknown=null,disposed=false;
  const tier = getFrameTier();
- const crewDir = tier === '4k' ? 'crew-4k' : tier === 'mobile' ? 'crew-mobile' : 'crew-webp';
- const cache=new FrameCache(
-  BUSINESS_LAST_FRAME,
-  tier === '4k' ? 28 : tier === 'mobile' ? 50 : 40,
-  draw,
-  n=>`business/${crewDir}/${String(n+1).padStart(4,'0')}.webp`,
-  n=>`business/crew-preview/${String(n+1).padStart(4,'0')}.webp`
- );
+ // [full quality, fallback if full quality is too slow]; every tier scrubs on the crew-preview pyramid first.
+ const [crewDir,fallbackDir]=tier==='4k'?['crew-4k','crew-webp']:tier==='desktop'?['crew-webp','crew-mobile']:['crew-mobile',null];
+ const path=(dir:string)=>(n:number)=>`business/${dir}/${String(n+1).padStart(4,'0')}.webp`;
+ const cache=new FrameCache(BUSINESS_LAST_FRAME,tier==='4k'?28:tier==='mobile'?50:40,draw,path(crewDir),path('crew-preview'),fallbackDir?path(fallbackDir):undefined);
  function style(el:HTMLElement,key:'transform'|'opacity'|'visibility'|'filter',value:string){if(el.style[key]!==value)el.style[key]=value;}
  function alpha(el:HTMLElement,n:number){style(el,'opacity',String(n));style(el,'visibility',n===0?'hidden':'inherit');}
  function local(el:HTMLElement,parent:HTMLElement){
@@ -63,9 +59,9 @@ export function createBusinessMotion(root:HTMLElement){
   if(disposed||!active||current>=.63)return;
   const frame=cache.nearest();if(!frame)return;
   if(current>=.51&&frame.index!==BUSINESS_LAST_FRAME){canvas.style.opacity='0';return;}
-  if(drawn!==frame.index){
+  if(drawnImage!==frame.image){
    canvas.width=frame.image.width;canvas.height=frame.image.height;
-   ctx.drawImage(frame.image,0,0);drawn=frame.index;
+   ctx.drawImage(frame.image,0,0);drawn=frame.index;drawnImage=frame.image;
   }
   canvas.style.opacity='1';section.dataset.frame=String(frame.index);renderCrew(frame.index);
  }
@@ -107,7 +103,7 @@ export function createBusinessMotion(root:HTMLElement){
    // The same canvas expands into the film and lands inside the dashboard preview.
    photo.render(filmBoxAt(s,start,end,w,h));
    const posterSource=media(`business/${p>=.51?'end':'crew-poster'}.webp`);if(poster.getAttribute('src')!==posterSource)poster.src=posterSource;
-   if(p>=.63){cache.release();canvas.style.opacity='0';drawn=-1;}
+   if(p>=.63){cache.release();canvas.style.opacity='0';drawn=-1;drawnImage=null;}
    else {cache.request(s.frame);draw();}
    alpha(dashboard,s.dashboardOpacity);
    const pose=s.camera;

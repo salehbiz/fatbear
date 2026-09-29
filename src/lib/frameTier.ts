@@ -1,16 +1,22 @@
 export type FrameTier = '4k' | 'desktop' | 'mobile';
 
-// Tiers are chosen by the physical pixels the full-screen film covers, not by CSS width, and a slow
-// connection never lowers the resolution: FrameCache shows preview frames first and upgrades around the
-// playhead, so a slow network only delays sharpness. Save-Data is the one explicit request to send less.
+// resilient-hero-scrub tiering: phones get the mobile tier, and the high tier needs a high-density
+// screen on a fast connection. The tiers themselves are sharper than the skill's: 4K instead of 2560,
+// and phones get 1080×1920 portrait frames cut from the 8K master instead of 540×960.
 export function getFrameTier(): FrameTier {
   if (typeof window === 'undefined') return '4k';
   const w = window.innerWidth;
+  const dpr = window.devicePixelRatio || 1;
   const conn = (navigator as any)?.connection;
-  const saveData = conn?.saveData === true || conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g';
+  const slowConn =
+    conn?.saveData === true ||
+    conn?.effectiveType === '3g' ||
+    conn?.effectiveType === '2g' ||
+    conn?.effectiveType === 'slow-2g' ||
+    (typeof conn?.downlink === 'number' && conn.downlink < 3);
   if (w < 768) return 'mobile';
-  if (saveData) return 'desktop';
-  return w * Math.min(window.devicePixelRatio || 1, 2) > 2200 ? '4k' : 'desktop';
+  if (dpr >= 1.25 && !slowConn && w * Math.min(dpr, 2) > 2200) return '4k';
+  return 'desktop';
 }
 
 // A portrait viewport shows a 9:16 slice of the film, so it loads the tier baked in that shape from the 8K master.

@@ -58,7 +58,7 @@ export class FilmRenderer {
   private program: WebGLProgram | null = null;
   private texture: WebGLTexture | null = null;
   private location = new Map<string, WebGLUniformLocation | null>();
-  private uploaded = -1;
+  private uploaded: TexImageSource | null = null;
   private texel: [number, number] = [1 / 1280, 1 / 720];
   private lost = false;
   private constructor(private canvas: HTMLCanvasElement, private gl: WebGLRenderingContext) {
@@ -97,17 +97,17 @@ export class FilmRenderer {
     gl.uniform1i(this.location.get('uTexture')!, 0);
     gl.clearColor(0, 0, 0, 0);
     this.program = program;
-    this.uploaded = -1;
+    this.uploaded = null;
   }
   draw(index: number, image: TexImageSource, d: FilmDraw): boolean {
     if (this.lost || !this.program) return false;
     const { gl } = this;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    if (this.uploaded !== index) {
+    if (this.uploaded !== image) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
       const size = image as { width: number; height: number };
       this.texel = [1 / size.width, 1 / size.height];
-      this.uploaded = index;
+      this.uploaded = image;
     }
     const u = (name: string) => this.location.get(name)!;
     const [w, h] = d.film, [cx, cy] = d.center;

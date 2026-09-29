@@ -40,26 +40,25 @@ export function createScroll(root: HTMLElement) {
   const introState = { o: 0 };
   let introPlaying = true;
   let intro: gsap.core.Timeline;
-  let filmW = 0, filmH = 0, lastDraw = '', disposed = false;
+  let filmW = 0, filmH = 0, lastDraw = '', lastImage: unknown = null, disposed = false;
   let travelHeight = storyTravelUnit(w, h);
   let resizing = false;
   let resizeProgress = 0;
   let previousWorld = -1;
   const lastFrame = manifest.lastFrame; // First fully black frame. Trailing black excluded.
   const tier = getFrameTier();
-  // Portrait screens load 1080×1920 frames cut from the 8K master along focalAt; landscape screens load 16:9 by pixel need.
+  // Portrait screens load 1080×1920 frames cut from the 8K master along focalAt; landscape screens load 16:9.
   const portrait = portraitFilm() && tier !== '4k';
-  const tierDir = portrait ? 'frames-portrait' : tier === '4k' ? 'frames-4k' : tier === 'mobile' ? 'frames-mobile' : 'frames';
+  // [full quality, preview pyramid, fallback if full quality is too slow]
+  const [tierDir, previewDir, fallbackDir] = portrait ? ['frames-portrait', 'frames-portrait-preview', null]
+    : tier === '4k' ? ['frames-4k', 'frames-mobile', 'frames']
+    : tier === 'desktop' ? ['frames', 'frames-preview', 'frames-mobile']
+    : ['frames-mobile', 'frames-preview', null];
   const source = portrait ? { w: PORTRAIT.w, h: PORTRAIT.h, focal: portraitFocalAt } : { w: 1280, h: 720, focal: focalAt };
   // Decoded 4K bitmaps are 33 MB each, so the sharp window stays small there; compressed blobs keep the rest instant.
   const frameLimit = tier === '4k' ? 24 : portrait ? 28 : 48;
-  const cache = new FrameCache(
-    lastFrame,
-    frameLimit,
-    () => draw(),
-    n => `${tierDir}/${String(n + 1).padStart(4, '0')}.webp`,
-    n => `${portrait ? 'frames-portrait-preview' : tier === 'mobile' ? 'frames-preview' : 'frames-mobile'}/${String(n + 1).padStart(4, '0')}.webp`
-  );
+  const path = (dir: string) => (n: number) => `${dir}/${String(n + 1).padStart(4, '0')}.webp`;
+  const cache = new FrameCache(lastFrame, frameLimit, () => draw(), path(tierDir), path(previewDir), fallbackDir ? path(fallbackDir) : undefined);
   let targetProgress = 0;
   const touch = matchMedia('(pointer: coarse)').matches;
   function measure() {
@@ -93,7 +92,8 @@ export function createScroll(root: HTMLElement) {
     const frame = cache.nearest();
     if (!frame) return;
     const signature = `${frame.index}:${filmW.toFixed(2)}:${filmH.toFixed(2)}:${reveal.active}:${reveal.dissolve.toFixed(4)}:${reveal.grayscale.toFixed(3)}`;
-    if (lastDraw === signature) return;
+    // The same index is redrawn when its full-quality frame replaces the preview.
+    if (lastDraw === signature && lastImage === frame.image) return;
     const r = coverRect(filmW, filmH, source.w, source.h, source.focal(frame.index));
     if (film3d) {
       if (!film3d.draw(frame.index, frame.image, { film: [filmW, filmH], crop: r, center: [focus.x, focus.y], reveal, paper, ink })) return;
@@ -102,7 +102,7 @@ export function createScroll(root: HTMLElement) {
       ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
     } else return;
     // Without the shader, the frame fades out over the paper-toned surface before the aperture cuts it.
-    canvas.style.opacity = film3d ? '1' : String(1 - reveal.grayscale); poster.style.opacity = '0'; lastDraw = signature;
+    canvas.style.opacity = film3d ? '1' : String(1 - reveal.grayscale); poster.style.opacity = '0'; lastDraw = signature; lastImage = frame.image;
     const lqip = document.getElementById('hero-lqip');
     if (lqip && lqip.style.opacity !== '0') {
       lqip.style.opacity = '0';

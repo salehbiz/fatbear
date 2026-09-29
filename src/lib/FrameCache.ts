@@ -1,33 +1,31 @@
 import { frameWindow } from './math.mjs';
 import { media } from './media';
 
+// Resilient two-phase frame loader (resilient-hero-scrub):
+//   Phase A — small preview frames for the whole film in stride-pyramid order (8 → 4 → 2 → 1), so the film
+//             scrubs end to end after a few hundred KB.
+//   Phase B — full-quality frames only in a window around the playhead, nearest first, biased toward the
+//             scroll direction. The film is never streamed in full quality in the background.
+// One addition: the exact playhead frame always gets a full-quality slot, even during Phase A, so whatever
+// the viewer is resting on sharpens first. The opening never shows a preview: until a full-quality frame
+// is ready the poster stays up, and a sharp frame up to HOLD frames away is held over a nearer preview.
+// A full-quality tier that errors or is too slow for the connection steps down to the fallback tier once.
+
 type Frame = ImageBitmap | HTMLImageElement;
 function dispose(frame: Frame) { if ('close' in frame) frame.close(); }
 
 const CACHE_NAME = 'fatbear-frame-cache-v3';
 // Previews stay compressed for the whole film; only those this close to the playhead are held decoded.
 const PREVIEW_RADIUS = 48;
+// A full-quality frame slower than this means the tier is too heavy for the connection.
+const SLOW_FRAME_MS = 4000;
+// A sharp frame this close to the playhead is shown instead of a preview; the poster counts as sharp frame 0.
+const HOLD = 8;
 
-async function decodeImage(blob: Blob): Promise<Frame> {
-  if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    return img;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function getMaxConcurrency(): number {
-  const conn = (navigator as any)?.connection;
-  if (conn?.effectiveType === '2g' || conn?.effectiveType === '3g' || conn?.saveData) return 4;
-  if (conn?.effectiveType === '4g' && typeof conn?.downlink === 'number' && conn.downlink < 5) return 6;
-  return 8;
-}
-const MAX_CONCURRENT = typeof navigator !== 'undefined' ? getMaxConcurrency() : 6;
+const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const PREVIEW_SLOTS = coarse ? 6 : 8;
+const REAL_SLOTS = coarse ? 4 : 6;
+const REAL_WINDOW = coarse ? 25 : 40;
 
 async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise<Blob> {
   if (typeof caches !== 'undefined') {
@@ -50,16 +48,29 @@ async function fetchWithCacheStorage(url: string, signal?: AbortSignal): Promise
   return await response.blob();
 }
 
+async function decodeImage(blob: Blob): Promise<Frame> {
+  if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export class FrameCache {
   private frames = new Map<number, Frame>();
   private previewFrames = new Map<number, Frame>();
   private compressedBlobs = new Map<number, Blob>();
   private previewBlobs = new Map<number, Blob>();
-  private previewDecoding = new Set<number>();
 
   private pending = new Map<number, AbortController>();
   private previewPending = new Map<number, AbortController>();
   private decoding = new Set<number>();
+  private previewDecoding = new Set<number>();
 
   private failed = new Set<number>();
   private previewFailed = new Set<number>();
@@ -68,59 +79,29 @@ export class FrameCache {
   private destroyed = false;
   private target = 0;
   private direction = 1;
-  private active = true;
+  private active = false;
   private previewOrder: number[] = [];
-  private previewIndex = 0;
-  private strideOrder: number[] = [];
-  private strideIndex = 0;
-
-  // Background preloader is unblocked either when target > 0 (user scrolled)
-  // or after idle callback / timeout in the browser, leaving initial LCP unconstrained.
-  private backgroundEnabled = false;
+  private fallenBack = false;
 
   constructor(
     private last: number,
     private limit: number,
     private update: () => void,
     private framePath: (index: number) => string = n => `frames/${String(n + 1).padStart(4, '0')}.webp`,
-    private previewPath?: (index: number) => string
+    private previewPath?: (index: number) => string,
+    private fallbackPath?: (index: number) => string
   ) {
-    const strideSeen = new Set<number>();
-    const strideList: number[] = [];
-    for (const stride of [4, 2, 1]) {
-      for (let i = 0; i <= this.last; i += stride) {
-        if (!strideSeen.has(i)) { strideSeen.add(i); strideList.push(i); }
+    const seen = new Set<number>();
+    for (const stride of [8, 4, 2, 1]) {
+      for (let i = 0; i <= last; i += stride) {
+        if (!seen.has(i)) { seen.add(i); this.previewOrder.push(i); }
       }
     }
-    this.strideOrder = strideList;
-
-    if (this.previewPath) {
-      const seen = new Set<number>();
-      const order: number[] = [];
-      for (const stride of [8, 4, 2, 1]) {
-        for (let i = 0; i <= this.last; i += stride) {
-          if (!seen.has(i)) { seen.add(i); order.push(i); }
-        }
-      }
-      this.previewOrder = order;
-    }
-
-    if (typeof window === 'undefined') {
-      this.backgroundEnabled = true;
-    } else {
-      const enable = () => {
-        this.enableBackground();
-        window.removeEventListener('scroll', enable);
-      };
-      window.addEventListener('scroll', enable, { passive: true });
-      setTimeout(enable, 800);
-    }
+    if (!seen.has(last)) this.previewOrder.push(last);
   }
 
-  private enableBackground() {
-    if (this.destroyed || this.backgroundEnabled) return;
-    this.backgroundEnabled = true;
-    this.pump();
+  private get previewsDone() {
+    return !this.previewPath || this.previewBlobs.size + this.previewFailed.size >= this.previewOrder.length;
   }
 
   request(target: number) {
@@ -129,31 +110,15 @@ export class FrameCache {
     this.target = target;
     this.active = true;
 
-    if (target > 0 && !this.backgroundEnabled) {
-      this.backgroundEnabled = true;
-    }
-
-    // Playhead-priority neighborhood window radiating outward from target:
-    // local comes FIRST so adjacent frames load immediately, coarse frames at the end.
-    const local = frameWindow(target, this.last, this.limit - 4, this.direction);
-    const coarse = [0, Math.round(this.last / 3), Math.round(this.last * 2 / 3), this.last];
-    this.wanted = [...new Set([...local, ...coarse])];
+    // Decode window: bitmaps held around the playhead, weighted toward the scroll direction.
+    this.wanted = frameWindow(target, this.last, this.limit, this.direction);
     this.wantedSet = new Set(this.wanted);
 
-    // If active playhead candidates need fetch slots, abort background fetches
-    let needed = 0;
-    for (const w of this.wanted) {
-      if (!this.frames.has(w) && !this.compressedBlobs.has(w) && !this.pending.has(w) && !this.failed.has(w)) {
-        needed++;
-      }
-    }
-    if (needed > 0 && this.pending.size + needed > MAX_CONCURRENT) {
-      for (const [n, controller] of this.pending) {
-        if (!this.wantedSet.has(n)) {
-          controller.abort();
-          this.pending.delete(n);
-          if (this.pending.size + needed <= MAX_CONCURRENT) break;
-        }
+    // Free full-quality slots held by frames the playhead has left behind.
+    for (const [n, controller] of this.pending) {
+      if (n !== target && Math.abs(n - target) > REAL_WINDOW) {
+        controller.abort();
+        this.pending.delete(n);
       }
     }
 
@@ -162,7 +127,6 @@ export class FrameCache {
   }
 
   private evict() {
-    // Evict decoded bitmaps outside wanted window to free GPU VRAM
     for (const [n, frame] of this.frames) {
       if (!this.wantedSet.has(n)) {
         dispose(frame);
@@ -175,127 +139,118 @@ export class FrameCache {
         this.previewFrames.delete(n);
       }
     }
-    // Retain compressed blobs in memory for instant re-decode on reverse scrub or jump
-    const blobLimit = Math.max(this.limit * 6, this.last + 1);
+    // Compressed full-quality frames are kept for instant re-decode, bounded around the playhead.
+    const blobLimit = Math.max(this.limit * 4, REAL_WINDOW * 2 + 1);
     if (this.compressedBlobs.size > blobLimit) {
-      const entries = [...this.compressedBlobs.keys()].sort((a, b) => Math.abs(b - this.target) - Math.abs(a - this.target));
-      while (this.compressedBlobs.size > blobLimit && entries.length) {
-        this.compressedBlobs.delete(entries.pop()!);
-      }
+      const far = [...this.compressedBlobs.keys()].sort((a, b) => Math.abs(a - this.target) - Math.abs(b - this.target));
+      while (this.compressedBlobs.size > blobLimit && far.length) this.compressedBlobs.delete(far.pop()!);
     }
+  }
+
+  private needsReal(n: number) {
+    return !this.frames.has(n) && !this.compressedBlobs.has(n) && !this.pending.has(n) && !this.failed.has(n);
   }
 
   private pump() {
     if (this.destroyed || !this.active) return;
 
-    // 1. Immediate decode for any wanted frame that is already in compressedBlobs
-    const candidates = this.backgroundEnabled ? this.wanted : [this.target];
-    for (const w of candidates) {
-      if (this.compressedBlobs.has(w) && !this.frames.has(w) && !this.decoding.has(w)) {
-        void this.decodeBlob(w, this.compressedBlobs.get(w)!);
-      }
+    // Decode whatever is already downloaded near the playhead.
+    for (const n of this.wanted) {
+      const blob = this.compressedBlobs.get(n);
+      if (blob && !this.frames.has(n) && !this.decoding.has(n)) void this.decodeBlob(n, blob);
     }
-
-    // 2. Fetch queue: connection-aware concurrent network fetches (4–8 slots)
-    while (this.pending.size < MAX_CONCURRENT) {
-      let n: number | undefined;
-
-      // Highest priority: missing wanted candidate
-      for (const w of candidates) {
-        if (!this.frames.has(w) && !this.compressedBlobs.has(w) && !this.pending.has(w) && !this.failed.has(w) && !this.decoding.has(w)) {
-          n = w;
-          break;
-        }
-      }
-      if (n !== undefined) {
-        const controller = new AbortController();
-        this.pending.set(n, controller);
-        void this.loadReal(n, controller);
-        continue;
-      }
-
-      // Continuous Background Streaming:
-      // Once active candidates are satisfied or in-flight, stream the sequence
-      // in stride order (stride 4 -> 2 -> 1) into CacheStorage and compressedBlobs
-      if (this.backgroundEnabled) {
-        let bgFound = false;
-        while (this.strideIndex < this.strideOrder.length) {
-          const s = this.strideOrder[this.strideIndex++];
-          if (!this.compressedBlobs.has(s) && !this.frames.has(s) && !this.pending.has(s) && !this.failed.has(s)) {
-            const controller = new AbortController();
-            this.pending.set(s, controller);
-            void this.loadReal(s, controller);
-            bgFound = true;
-            break;
-          }
-        }
-        if (bgFound) continue;
-      }
-      break;
-    }
-
-    // 3. Re-decode previews that came back into range after a jump
     for (let d = 0; d <= PREVIEW_RADIUS && this.previewDecoding.size < 4; d++) {
       for (const p of d ? [this.target + d, this.target - d] : [this.target]) {
         if (this.previewBlobs.has(p) && !this.previewFrames.has(p) && !this.previewDecoding.has(p)) void this.decodePreview(p);
       }
     }
 
-    // 4. Up to 2 concurrent preview fetches when background preloading is active
-    if (this.previewPath && this.previewPending.size < 2 && this.backgroundEnabled) {
-      while (this.previewPending.size < 2 && this.previewIndex < this.previewOrder.length) {
-        const p = this.previewOrder[this.previewIndex++];
-        if (!this.previewBlobs.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p) && !this.frames.has(p)) {
-          const controller = new AbortController();
-          this.previewPending.set(p, controller);
-          void this.loadPreview(p, controller);
-        }
+    // The frame on screen always gets full quality first, and the next few ahead of it stay sharp while previews load.
+    if (this.needsReal(this.target)) this.loadReal(this.target);
+    for (let d = 1; d <= HOLD && this.pending.size < 3; d++) {
+      const n = this.target + d * this.direction;
+      if (n >= 0 && n <= this.last && this.needsReal(n)) this.loadReal(n);
+    }
+
+    // Phase A: preview pyramid.
+    if (this.previewPath) {
+      for (const p of this.previewOrder) {
+        if (this.previewPending.size >= PREVIEW_SLOTS) break;
+        if (!this.previewBlobs.has(p) && !this.previewPending.has(p) && !this.previewFailed.has(p)) this.loadPreview(p);
       }
+    }
+
+    // Phase B: full quality around the playhead once the whole film is scrubbable.
+    if (!this.previewsDone) return;
+    const lo = Math.max(0, this.target - REAL_WINDOW), hi = Math.min(this.last, this.target + REAL_WINDOW);
+    const candidates: number[] = [];
+    for (let n = lo; n <= hi; n++) if (this.needsReal(n)) candidates.push(n);
+    const cost = (n: number) => Math.abs(n - this.target) * (Math.sign(n - this.target) === this.direction ? .7 : 1);
+    candidates.sort((a, b) => cost(a) - cost(b));
+    for (const n of candidates) {
+      if (this.pending.size >= REAL_SLOTS) break;
+      this.loadReal(n);
+    }
+  }
+
+  private realPath(n: number) {
+    return this.fallenBack && this.fallbackPath ? this.fallbackPath(n) : this.framePath(n);
+  }
+
+  private stepDown() {
+    if (this.fallenBack || !this.fallbackPath) return false;
+    this.fallenBack = true;
+    this.failed.clear();
+    return true;
+  }
+
+  private async loadReal(n: number) {
+    const controller = new AbortController();
+    this.pending.set(n, controller);
+    const started = performance.now();
+    const fallenBack = this.fallenBack;
+    try {
+      const blob = await fetchWithCacheStorage(media(this.realPath(n)), controller.signal);
+      // A cold network fetch this slow means the tier is too heavy here; cached hits are near-instant.
+      if (!fallenBack && performance.now() - started > SLOW_FRAME_MS) this.stepDown();
+      this.compressedBlobs.set(n, blob);
+      if (this.wantedSet.has(n) && this.active && !this.destroyed) void this.decodeBlob(n, blob);
+    } catch {
+      if (!controller.signal.aborted && !this.destroyed) {
+        // A failure on the full tier steps down once and retries; a failure on the fallback is final.
+        const retry = fallenBack === this.fallenBack && this.stepDown();
+        if (!retry) this.failed.add(n);
+      }
+    } finally {
+      if (this.pending.get(n) === controller) this.pending.delete(n);
+      this.pump();
     }
   }
 
   private async decodeBlob(n: number, blob: Blob) {
     if (this.decoding.has(n) || this.frames.has(n) || !this.active || this.destroyed || !this.wantedSet.has(n)) return;
     this.decoding.add(n);
-    let frame: Frame | undefined;
     try {
-      frame = await decodeImage(blob);
+      const frame = await decodeImage(blob);
       if (this.destroyed || !this.active || !this.wantedSet.has(n)) {
-        if (frame) dispose(frame);
+        dispose(frame);
         return;
       }
-      if (this.frames.has(n)) {
-        dispose(this.frames.get(n)!);
-      }
+      const old = this.frames.get(n);
+      if (old) dispose(old);
       this.frames.set(n, frame);
-      this.evict();
       this.update();
     } catch {
-      // Decode error
+      // Decode error: the preview keeps covering this frame.
     } finally {
       this.decoding.delete(n);
     }
   }
 
-  private async loadReal(n: number, controller: AbortController) {
-    try {
-      const blob = await fetchWithCacheStorage(media(this.framePath(n)), controller.signal);
-      this.compressedBlobs.set(n, blob);
-      if (this.wantedSet.has(n) && this.active && !this.destroyed) {
-        void this.decodeBlob(n, blob);
-      }
-    } catch (error: any) {
-      if (!controller.signal.aborted && !this.destroyed) {
-        this.failed.add(n);
-      }
-    } finally {
-      this.pending.delete(n);
-      this.pump();
-    }
-  }
-
-  private async loadPreview(n: number, controller: AbortController) {
+  private async loadPreview(n: number) {
     if (!this.previewPath) return;
+    const controller = new AbortController();
+    this.previewPending.set(n, controller);
     try {
       const blob = await fetchWithCacheStorage(media(this.previewPath(n)), controller.signal);
       if (this.destroyed || controller.signal.aborted) return;
@@ -304,7 +259,7 @@ export class FrameCache {
     } catch {
       if (!controller.signal.aborted) this.previewFailed.add(n);
     } finally {
-      this.previewPending.delete(n);
+      if (this.previewPending.get(n) === controller) this.previewPending.delete(n);
       this.pump();
     }
   }
@@ -320,7 +275,7 @@ export class FrameCache {
         return;
       }
       this.previewFrames.set(n, frame);
-      if (!this.frames.has(this.target) && Math.abs(n - this.target) <= 8) this.update();
+      if (!this.frames.has(this.target)) this.update();
     } catch {
       this.previewFailed.add(n);
     } finally {
@@ -328,35 +283,30 @@ export class FrameCache {
     }
   }
 
+  // Sharp first: the exact full-quality frame, else one held within HOLD frames. Past that, distance first,
+  // so a fast scrub keeps moving on previews.
   nearest(): { index: number; image: Frame } | undefined {
-    // Exact match
-    if (this.frames.has(this.target)) {
-      return { index: this.target, image: this.frames.get(this.target)! };
-    }
+    const exact = this.frames.get(this.target);
+    if (exact) return { index: this.target, image: exact };
+    const sharp = this.closest(this.frames);
+    if (sharp && Math.abs(sharp.index - this.target) <= HOLD) return sharp;
+    // Before any sharp frame exists the poster is on screen; keep it rather than open on a preview.
+    if (!sharp && this.target <= HOLD && !this.failed.has(this.target)) return undefined;
+    const preview = this.previewFrames.get(this.target);
+    if (preview) return { index: this.target, image: preview };
+    const blurry = this.closest(this.previewFrames);
+    if (!sharp) return blurry;
+    if (!blurry) return sharp;
+    return Math.abs(blurry.index - this.target) < Math.abs(sharp.index - this.target) ? blurry : sharp;
+  }
 
-    // Find closest full-res frame
+  private closest(source: Map<number, Frame>) {
     let best = Infinity, result: { index: number; image: Frame } | undefined;
-    for (const [n, image] of this.frames) {
+    for (const [n, image] of source) {
+      // The last frame is black; never show it early as a stand-in.
       if (n === this.last && this.target < this.last) continue;
       const d = Math.abs(n - this.target);
-      if (d < best) {
-        best = d;
-        result = { index: n, image };
-      }
-    }
-
-    // Hybrid preview fallback per skill and user specification:
-    // If the gap is <= 8 frames, hold the full-res frame (sharp, no blurry flicker!).
-    // Only if gap > 8 frames during fast scrubs, use preview frame to avoid visual stutter/blank frames.
-    if (best > 8 && this.previewFrames.size > 0) {
-      for (const [n, image] of this.previewFrames) {
-        if (n === this.last && this.target < this.last) continue;
-        const d = Math.abs(n - this.target);
-        if (d < best) {
-          best = d;
-          result = { index: n, image };
-        }
-      }
+      if (d < best) { best = d; result = { index: n, image }; }
     }
     return result;
   }
@@ -365,6 +315,8 @@ export class FrameCache {
     this.active = false;
     for (const controller of this.pending.values()) controller.abort();
     for (const controller of this.previewPending.values()) controller.abort();
+    this.pending.clear();
+    this.previewPending.clear();
   }
 
   release() {
@@ -376,7 +328,6 @@ export class FrameCache {
     this.compressedBlobs.clear();
     this.wanted = [];
     this.wantedSet.clear();
-    this.strideIndex = 0;
   }
 
   setLimit(limit: number) {
@@ -391,6 +342,7 @@ export class FrameCache {
       blobs: this.compressedBlobs.size,
       pending: this.pending.size,
       failed: this.failed.size,
+      fallenBack: this.fallenBack,
       target: this.target,
       limit: this.limit
     };
@@ -405,6 +357,5 @@ export class FrameCache {
     this.previewFrames.clear();
     this.previewBlobs.clear();
     this.compressedBlobs.clear();
-    this.strideIndex = 0;
   }
 }
