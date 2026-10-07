@@ -102,3 +102,6 @@
 .story-progress>span{flex:1;width:auto;transform:none;background:#bdc4ad3d;position:relative;overflow:hidden;border-radius:1px}
 .story-progress>span::after{content:"";position:absolute;inset:0;background:#869675;transform:scaleX(var(--fill,0));transform-origin:0 50%}
 @media(max-width:767px){.story-progress{left:20px;right:20px;bottom:10px;gap:3px}.replay{min-height:30px;font-size:9px;padding:3px 3px 3px 10px}.replay-orb{width:22px;height:22px}}
+
+.brand-corner svg{display:block;height:1.15em;width:auto}
+.story-masthead>span:first-child .brand-wordmark{display:block;height:.62em;width:auto}
