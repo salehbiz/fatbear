@@ -1,32 +1,17 @@
 import { AnimatedFooter } from './ui/animated-footer';
-import { useRef, useState } from 'react';
-import { submitApplication, validateApplication } from '../lib/application.mjs';
-import { Form, Input, SubmitButton } from './ui/form';
+import { WhatsappLogo } from '@phosphor-icons/react';
+import './ui/form.css';
+
+const WHATSAPP_NUMBER = '19203787572';
+const WHATSAPP_MESSAGE = 'Hi Fat Bear, I’m a creator and I’d like to talk about running my paywall platform.';
+export const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`;
 
 export default function Belong({jump}:{jump?:(world:number)=>void}) {
- const formId=import.meta.env.VITE_FORMSPREE_FORM_ID;
- const [status,setStatus]=useState<'idle'|'submitting'|'success'|'error'>('idle');
- const [message,setMessage]=useState('');
- const [errors,setErrors]=useState<Record<string,string>>({});
- const busy=useRef(false),feedback=useRef<HTMLParagraphElement>(null);
- async function submit(event:React.FormEvent<HTMLFormElement>){
-  event.preventDefault();if(busy.current)return;
-  const form=event.currentTarget,values=Object.fromEntries(new FormData(form)),invalid=validateApplication(values);
-  setErrors(invalid);
-  if(Object.keys(invalid).length){(form.elements.namedItem(Object.keys(invalid)[0]) as HTMLElement)?.focus();return;}
-  busy.current=true;setStatus('submitting');setMessage('Sending your application…');
-  try {setMessage(await submitApplication(formId,values));setStatus('success');}
-  catch(error){setMessage((error as Error).message);setStatus('error');}
-  finally{busy.current=false;requestAnimationFrame(()=>feedback.current?.focus({preventScroll:true}));}
- }
  return <section id="belong" className="belong" aria-label="Talk to Fat Bear Agency">
-  <div id="application" className="application-area application-simple"><div className="application-intro"><h2>Talk to <em>us.</em></h2><p>30 minutes, no commitment. We map your platform, you approve every launch.</p></div>
-   <Form onSubmit={submit} noValidate aria-label="Book a call" aria-busy={status==='submitting'}>
-    {status!=='success'&&<><label htmlFor="apply-email">Email<Input id="apply-email" name="email" type="email" placeholder="you@example.com" autoComplete="email" required maxLength={254} aria-invalid={!!errors.email} aria-describedby={errors.email?'email-error':undefined}/>{errors.email&&<span className="field-error" id="email-error">{errors.email}</span>}</label>
-    <label className="application-trap" aria-hidden="true">Leave this blank<input name="_gotcha" tabIndex={-1} autoComplete="off"/></label>
-    <SubmitButton type="submit" loading={status==='submitting'} disabled={!formId}>Book my call</SubmitButton></>}
-    <p ref={feedback} tabIndex={-1} className={`application-feedback ${status}`} role={status==='error'?'alert':'status'} aria-live="polite">{message}</p>
-   </Form>
+  <div id="application" className="application-area application-simple"><div className="application-intro"><h2>Talk to <em>us.</em></h2><p>Message us on WhatsApp. We map your platform, you approve every launch.</p></div>
+   <div className="membership-form">
+    <a className="membership-submit whatsapp-cta" href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer"><span><WhatsappLogo size={20} weight="fill" aria-hidden="true"/>Chat on WhatsApp</span></a>
+   </div>
   </div>
   <AnimatedFooter jump={jump}/>
  </section>;

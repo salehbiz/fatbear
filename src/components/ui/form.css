@@ -25,3 +25,5 @@
 .application-simple .application-feedback.success{font-size:18px;border:0;padding:0;text-align:center}
 @media(max-width:767px){.application-area .membership-form{max-width:none}}
 @media(prefers-reduced-motion:reduce){.membership-spinner{animation:none}}
+.whatsapp-cta{display:flex;align-items:center;justify-content:center;text-decoration:none}
+.whatsapp-cta>span{display:inline-flex;align-items:center;gap:10px}
