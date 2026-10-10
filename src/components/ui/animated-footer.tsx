@@ -73,7 +73,7 @@ export function AnimatedFooter({ jump }: { jump?: (world:number)=>void }) {
   return()=>{disposed=true;observer.disconnect();cancelAnimationFrame(raf);images.forEach(image=>{image.onload=null;image.onerror=null;});preference.removeEventListener('change',change);el.removeEventListener('pointermove',move);el.removeEventListener('pointerleave',reset);context.revert();};
  },[]);
  return <footer ref={root} className="animated-footer">
-  <div className="af-content"><div><p className="eyebrow">Getting started</p><p className="af-invitation">Your fans are already there.<br/><em>Let’s open the door.</em></p><a href="#application" className="apply-button">Talk to us <span aria-hidden="true">↗</span></a></div>
+  <div className="af-content"><div><p className="eyebrow">Getting started</p><p className="af-invitation">Your audience is already there.<br/><em>Let’s scale what it earns.</em></p><a href="#application" className="apply-button">Get in touch <span aria-hidden="true">↗</span></a></div>
   <nav aria-label="Explore the chapters">{CHAPTERS.map(c=><a key={c.id} href={c.destination?'#belong':`#${c.id}`} onClick={jump?event=>{event.preventDefault();jump(c.focus);}:undefined}><small>{c.numeral}</small>{c.name}</a>)}</nav></div>
   <div className="af-art af-art-left" aria-hidden="true"><canvas/></div><div className="af-art af-art-right" aria-hidden="true"><canvas/></div>
   <h2 className="af-wordmark" aria-label="Fat Bear">{Array.from('Fat Bear').map((letter,i)=><span className="af-mask" key={i}><span data-footer-char aria-hidden="true">{letter===' '?'\u00a0':letter}</span></span>)}</h2>

@@ -29,7 +29,7 @@ export default function App() {
     jumpRef.current = controller.jumpTo;
     return controller.destroy;
   }, [reduced]);
-  if (reduced) return <main className="static-experience"><SiteBackground reduced/><header className="static-header"><h1>Fat Bear Agency</h1><p>{INTRO_COPY}</p><a className="apply-button" href="#application">Talk to us ↗</a></header><ReducedStory/><Belong/></main>;
+  if (reduced) return <main className="static-experience"><SiteBackground reduced/><header className="static-header"><h1>Fat Bear Agency</h1><p>{INTRO_COPY}</p><a className="apply-button" href="#application">Get in touch ↗</a></header><ReducedStory/><Belong/></main>;
   return <main ref={root} className="experience">
     <SiteBackground/>
     <section className="stage" aria-label="Fatbear creator story">
@@ -39,10 +39,10 @@ c0,1.55,1.26,2.81,2.81,2.81H360V364.53c0-0.4,0.32-0.72,0.72-0.72h287.55c0.4,0,0.
 c0,0.4-0.32,0.72-0.72,0.72H460.84c-0.4,0-0.72,0.32-0.72,0.72v77.69c0,0.4,0.32,0.72,0.72,0.72h169.37c0.4,0,0.72,0.32,0.72,0.72
 v81.64c0,0.4-0.32,0.72-0.72,0.72H460.84c-0.4,0-0.72,0.32-0.72,0.72v186.68h115.7c124.61,0,197.74-54.47,197.74-144.01v-1.49
 C773.56,587.26,736.04,551.51,676.43,530.32z"/></svg></div>
-      <button className="masthead-apply" onClick={()=>jumpRef.current(CHAPTERS[5].focus)}>Talk to us <span aria-hidden="true">↗</span></button>
+      <button className="masthead-apply" onClick={()=>jumpRef.current(CHAPTERS[5].focus)}>Get in touch <span aria-hidden="true">↗</span></button>
       <SocialStory replay={() => replayRef.current()} openPasses={() => passesRef.current()} jump={world => jumpRef.current(world)}/>
       <div className="wordmark-row" aria-hidden="true"><span className="word-fat">Fat</span><span className="media-slot"/><span className="word-bear">Bear</span></div>
-      <h1 className="sr-only">Fat Bear Agency. We turn your fans into income.</h1>
+      <h1 className="sr-only">Fat Bear Agency. We turn your audience into serious income.</h1>
       <div className="film-surface">
         {/* Portrait screens get frame 1 of the portrait tier, so the poster is as sharp as the film it hands over to. */}
         <picture>
@@ -51,7 +51,7 @@ C773.56,587.26,736.04,551.51,676.43,530.32z"/></svg></div>
         </picture>
         <canvas className="film-canvas" aria-hidden="true"/>
       </div>
-      <div className="hero-footer"><span className="footer-title">{INTRO_COPY}</span><span className="scroll-cue">Scroll to explore <ArrowDown size={16}/></span><span className="footer-end">Your fans are waiting. <ArrowUpRight size={16}/></span></div>
+      <div className="hero-footer"><span className="footer-title">{INTRO_COPY}</span><span className="scroll-cue">Scroll to explore <ArrowDown size={16}/></span><span className="footer-end">Your audience is worth more. <ArrowUpRight size={16}/></span></div>
       <div className="intro-mark" aria-hidden="true">fatbear</div>
       <TexturedPortal/>
     </section>
